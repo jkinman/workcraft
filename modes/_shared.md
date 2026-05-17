@@ -29,7 +29,7 @@ The evaluation uses 6 blocks (A-F) with a global score of 1-5:
 
 | Dimension | What it measures |
 |-----------|-----------------|
-| Match con CV | Skills, experience, proof points alignment |
+| CV Match | Skills, experience, proof points alignment |
 | North Star alignment | How well the role fits the user's target archetypes (from _profile.md) |
 | Comp | Salary vs market (5=top quartile, 1=well below) |
 | Cultural signals | Company culture, growth, stability, remote policy |
@@ -76,12 +76,14 @@ Classify every offer into one of these types (or hybrid of 2):
 
 | Archetype | Key signals in JD |
 |-----------|-------------------|
-| AI Platform / LLMOps | "observability", "evals", "pipelines", "monitoring", "reliability" |
-| Agentic / Automation | "agent", "HITL", "orchestration", "workflow", "multi-agent" |
-| Technical AI PM | "PRD", "roadmap", "discovery", "stakeholder", "product manager" |
-| AI Solutions Architect | "architecture", "enterprise", "integration", "design", "systems" |
-| AI Forward Deployed | "client-facing", "deploy", "prototype", "fast delivery", "field" |
-| AI Transformation | "change management", "adoption", "enablement", "transformation" |
+| Full Stack Engineer | "full stack", "frontend + backend", "end-to-end", "React", "Node", "TypeScript", "API design" |
+| Frontend Engineer | "frontend", "UI engineer", "React", "Vue", "Next.js", "design system", "component architecture" |
+| AI Platform / LLMOps | "observability", "evals", "pipelines", "monitoring", "reliability", "LangChain", "LangSmith" |
+| Agentic / Automation | "agent", "HITL", "orchestration", "workflow", "multi-agent", "AI-native" |
+| Technical AI PM | "PRD", "roadmap", "discovery", "stakeholder", "product manager", "AI product" |
+| AI Solutions Architect | "architecture", "enterprise", "integration", "design", "systems", "solutions" |
+| Staff / Principal Engineer | "staff", "principal", "tech lead", "architecture decisions", "org-wide", "mentorship" |
+| Engineering Manager | "engineering manager", "team lead", "people management", "hiring", "performance reviews" |
 
 After detecting archetype, read `modes/_profile.md` for the user's specific framing and proof points for that archetype.
 
