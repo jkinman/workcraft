@@ -1,0 +1,3 @@
+Career-Ops Web Dashboard running on http://0.0.0.0:3000
+PDF Generation: POST /api/generate-pdf
+PDF Download: GET /download-pdf?file=...
