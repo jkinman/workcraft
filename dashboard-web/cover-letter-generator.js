@@ -22,7 +22,7 @@ function loadProfile() {
     phone: "778-788-1455",
     location: "Vancouver BC",
     linkedin: "linkedin.com/in/jkinman",
-    portfolio_url: "https://jkinman.github.io"
+    portfolio_url: "https://kinman.dev"
   };
   
   if (!fs.existsSync(profilePath)) {

@@ -82,8 +82,9 @@ func ParseApplications(careerOpsPath string) []model.CareerApplication {
 			Date:    fields[1],
 			Company: fields[2],
 			Role:    fields[3],
-			Status:  fields[5],
-			HasPDF:  strings.Contains(fields[6], "\u2705"),
+		app.Status = fields[5]
+		app.StatusClass = StatusToCSSClass(NormalizeStatus(app.Status))
+		app.HasPDF = strings.Contains(fields[6], "✅")
 		}
 
 		// Parse score (field 4 = Score column)
@@ -492,10 +493,32 @@ func NormalizeStatus(raw string) string {
 	case strings.Contains(s, "discarded") || strings.Contains(s, "descartado") || s == "descartada" || s == "cerrada" || s == "cancelada" ||
 		strings.HasPrefix(s, "duplicado") || strings.HasPrefix(s, "dup"):
 		return "discarded"
-	case strings.Contains(s, "evaluated") || strings.Contains(s, "evaluada") || s == "condicional" || s == "hold" || s == "monitor" || s == "evaluar" || s == "verificar":
+	case strings.Contains(s, "evaluated") || strings.Contains(s, "evaluada") || s == "condicional" || s == "evaluar" || s == "verificar":
 		return "evaluated"
+	case s == "hold" || s == "monitor":
+		return "hold"
 	default:
 		return s
+	}
+}
+
+// StatusToCSSClass returns a CSS class based on the normalized status.
+func StatusToCSSClass(status string) string {
+	switch status {
+	case "offer":
+		return "status-offer"
+	case "interview":
+		return "status-interview"
+	case "applied", "responded":
+		return "status-applied"
+	case "evaluated":
+		return "status-evaluated"
+	case "hold":
+		return "status-hold"
+	case "skip", "rejected", "discarded":
+		return "status-rejected"
+	default:
+		return "status-default"
 	}
 }
 

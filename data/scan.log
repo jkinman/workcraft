@@ -1,0 +1,565 @@
+Scanning 73 companies via API (29 skipped — no API detected)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Portal Scan — 2026-05-19
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Companies scanned:     73
+Total jobs found:      4918
+Filtered by title:     4042 removed
+Duplicates:            827 skipped
+New offers added:      49
+
+Errors (9):
+  ✗ Ada: HTTP 404
+  ✗ Weights & Biases: HTTP 404
+  ✗ Factorial: HTTP 404
+  ✗ Clarity AI: HTTP 404
+  ✗ Tinybird: HTTP 404
+  ✗ Travelperk: HTTP 404
+  ✗ Forto: HTTP 404
+  ✗ Vinted: HTTP 404
+  ✗ Runway: HTTP 404
+
+New offers:
+  + Intercom | Principal Engineer  | Dublin, Ireland
+  + Intercom | Principal Engineer - Go-To-Market | Dublin, Ireland
+  + Anthropic | Applied AI Architect, Partnerships | Paris, France
+  + Anthropic | Manager of Solutions Architecture, Applied AI (Enterprise Tech) | San Francisco, CA | New York City, NY
+  + Anthropic | Product Manager, Developer Productivity | San Francisco, CA | New York City, NY
+  + Anthropic | Solutions Architect, Applied AI | Zürich, CH
+  + Anthropic | Staff Engineer, Datacenter Server Lifecycle | San Francisco, CA | New York City, NY | Seattle, WA
+  + Anthropic | Staff Software Engineer, Accessibility | San Francisco, CA | New York City, NY | Seattle, WA
+  + Anthropic | Staff Software Engineer, Inference | Dublin, IE
+  + Anthropic | Staff Software Engineer, Node Infra | San Francisco, CA | New York City, NY | Seattle, WA
+  + Glean | AI Success Manager (APAC hours) | Bangalore, India
+  + Glean | AI Success Manager, West | Remote - US
+  + Glean | Manager, AI Success | Bangalore, India
+  + Glean | Software Engineer, Backend | Mountain View, CA
+  + Decagon | Senior Software Engineer, Enterprise Product | New York City
+  + Decagon | Staff Software Engineer, Enterprise Product | San Francisco
+  + Speechmatics | Software Engineer - FutureVoices | London, England, United Kingdom
+  + Cohere | Solutions Architect - Defence and National Security | Ottawa
+  + Pinecone | Senior/Staff Software Engineer, Experience | US Remote
+  + HelloFresh | Staff Engineer, Consumer | Warszawa, Masovian Voivodeship, Poland
+  + Contentful | Fullstack Software Engineer (f/m/d) | Dublin, Dublin, Ireland
+  + Contentful |  Senior Software Engineer - Machine Learning (f/m/d) | Dublin, Dublin, Ireland
+  + SumUp | Senior AML Investigator | Sofia, Bulgaria
+  + Attio | Senior Product Engineer [Frontend]  | Poland
+  + Sierra | GTM Engineer | San Francisco, CA
+  + Palantir | Backend Software Engineer - Application Development | New York, NY
+  + Palantir | Backend Software Engineer - Defense | Palo Alto, CA
+  + Palantir | Senior Backend Software Engineer - Application Development | London, United Kingdom
+  + Palantir | Senior Front End Software Engineer - Application Development | New York, NY
+  + Palantir | Senior Software Engineer, Substrate | New York, NY
+  + Palantir | Software Engineer - Apollo Systems | Seattle, WA
+  + Palantir | Software Engineer - Mission Manager | New York, NY
+  + Wayve | Application Software Engineer | Germany
+  + Wayve | Solutions Architect | Japan; Tokyo
+  + Pigment | Senior Backend Software Engineer | France
+  + Faculty | Lead Software Engineer | London
+  + Faculty | Senior Software Engineer  | United Kingdom
+  + Faculty | Software Engineer  | United Kingdom
+  + Faculty | Software Engineer | London
+  + Perplexity | Member of Technical Staff (Backend Software Engineer) | San Francisco
+  + Clay Labs | GTM Engineer - CX | New York
+  + Clay Labs | GTM Engineer - Ecosystem | New York
+  + Clay Labs | GTM Engineer - Seller Efficiency | New York
+  + Spotify | Frontend Engineer - Music | New York, NY
+  + Spotify | Senior Product Manager - Sharing & Social | Stockholm
+  + Spotify | Senior Product Manager – Partner Growth | Stockholm
+  + Legora | Senior Software Engineer | Stockholm HQ
+  + Synthesia | Frontend Engineer, Growth | London
+  + Synthesia | Principal/Staff Software Engineer | Seattle
+
+Results saved to data/pipeline.md and data/scan-history.tsv
+
+→ Run /career-ops pipeline to evaluate new offers.
+→ Share results and get help: https://discord.gg/8pRpHETxa4
+Scanning 73 companies via API (29 skipped — no API detected)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Portal Scan — 2026-05-19
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Companies scanned:     73
+Total jobs found:      4918
+Filtered by title:     4042 removed
+Duplicates:            870 skipped
+New offers added:      6
+
+Errors (9):
+  ✗ Ada: HTTP 404
+  ✗ Factorial: HTTP 404
+  ✗ Tinybird: HTTP 404
+  ✗ Weights & Biases: HTTP 404
+  ✗ Travelperk: HTTP 404
+  ✗ Clarity AI: HTTP 404
+  ✗ Forto: HTTP 404
+  ✗ Runway: HTTP 404
+  ✗ Vinted: HTTP 404
+
+New offers:
+  + Glean | AI Success Manager, West | San Francisco, CA
+  + Contentful | Fullstack Software Engineer (f/m/d) | London, England, United Kingdom
+  + Faculty | Lead Software Engineer | London
+  + Palantir | Backend Software Engineer - Defense | New York, NY
+  + Palantir | Senior Software Engineer, Substrate | London, United Kingdom
+  + Palantir | Software Engineer - Mission Manager | Seattle, WA
+
+Results saved to data/pipeline.md and data/scan-history.tsv
+
+→ Run /career-ops pipeline to evaluate new offers.
+→ Share results and get help: https://discord.gg/8pRpHETxa4
+Scanning 73 companies via API (29 skipped — no API detected)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Portal Scan — 2026-05-20
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Companies scanned:     73
+Total jobs found:      4928
+Filtered by title:     4057 removed
+Duplicates:            862 skipped
+New offers added:      9
+
+Errors (9):
+  ✗ Ada: HTTP 404
+  ✗ Factorial: HTTP 404
+  ✗ Tinybird: HTTP 404
+  ✗ Clarity AI: HTTP 404
+  ✗ Travelperk: HTTP 404
+  ✗ Forto: HTTP 404
+  ✗ Vinted: HTTP 404
+  ✗ Runway: HTTP 404
+  ✗ Weights & Biases: HTTP 404
+
+New offers:
+  + Parloa | Lead Agent Architect - SAP | New York Office
+  + Parloa | Senior Agent Architect | New York Office; Remotely in the USA
+  + n8n | Sr Growth Engineer (Fullstack TS/Vue/NodeJS) | Berlin Office
+  + Cohere | Head of Solutions Architecture | San Francisco
+  + Qonto | Growth Operations - Product Manager - Partnerships Channel | Paris
+  + Faculty | Lead Software Engineer | United Kingdom
+  + Spotify | Group Product Manager - Messaging | London
+  + Spotify | Senior Full Stack Engineer - WhoSampled | London
+  + Palantir | Senior Software Engineer, Substrate | Seattle, WA
+
+Results saved to data/pipeline.md and data/scan-history.tsv
+
+→ Run /career-ops pipeline to evaluate new offers.
+→ Share results and get help: https://discord.gg/8pRpHETxa4
+Scanning 73 companies via API (15 skipped — no API detected)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Portal Scan — 2026-05-22
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Companies scanned:     73
+Total jobs found:      4817
+Filtered by title:     3266 removed
+Duplicates:            1500 skipped
+New offers added:      51
+
+Errors (10):
+  ✗ Ada: HTTP 404
+  ✗ Factorial: HTTP 404
+  ✗ Weights & Biases: HTTP 404
+  ✗ Tinybird: HTTP 404
+  ✗ Travelperk: HTTP 404
+  ✗ Clarity AI: HTTP 404
+  ✗ Forto: HTTP 404
+  ✗ Vinted: HTTP 404
+  ✗ Runway: HTTP 404
+  ✗ Sierra: This operation was aborted
+
+New offers:
+  + Anthropic | Account Executive, Beneficial Deployments (Spanish Speaking) | Dublin, IE; London, UK
+  + ElevenLabs | Enterprise Solutions Engineer - Germany | Germany
+  + Glean | Software Engineer, Platform Security | Remote - US
+  + Glean | Tech Lead Manager, Admin Console | San Francisco, CA
+  + Decagon | Senior Software Engineer, Infrastructure | New York City
+  + Decagon | Staff Research Engineer, Voice + Speech | New York City
+  + Decagon | Senior Research Engineer, Voice + Speech | New York City
+  + Decagon | Senior Agent Product Manager - Germany | London
+  + n8n | Community Software Engineer | Remote | Europe | Berlin Office
+  + Attio | Senior Product Engineer [Backend]  | Poland
+  + Pinecone | Senior/Staff Software Engineer, Search & Retrieval Infrastructure | Tel Aviv
+  + Helsing | Systems Engineer (Requirements Manager), Aviation | Munich
+  + Contentful | Senior Software Engineer - Backend & Infrastructure (f/m/d) | London, England, United Kingdom
+  + HelloFresh | Staff Engineer, Intelligent Platforms | Warszawa, Masovian Voivodeship, Poland
+  + N26 | Head of Data Science - Generative AI | Berlin
+  + Intercom | Account Manager - French Speaking | London, England
+  + Intercom | Account Manager - German Speaking | Dublin, Ireland
+  + Intercom | IT Systems Engineer | San Francisco, California
+  + Intercom | Partner Solutions Engineer (NAMER & LATAM) | Chicago, Illinois
+  + Intercom | Principal Engineer, Web Platform – Team Web | Dublin, Ireland
+  + Intercom | Senior Engineering Manager - Team Billing | Dublin, Ireland
+  + Intercom | Staff AI Designer | Dublin, Ireland
+  + SumUp | Backend Engineer (Global Bank Tribe) | Florianópolis, Santa Catarina, Brazil
+  + SumUp | Commercial Terrain - Indépendant (Freelance) | Brest, Finistère, France
+  + SumUp | Senior Backend Engineer | Vilnius, Lithuania
+  + SumUp | Senior Backend Engineer - Accounts  | Sofia, Bulgaria
+  + SumUp | Senior Backend Engineer - Fiscalization | Berlin, Germany
+  + SumUp | Senior Technical Product Manager | Berlin, Germany
+  + Wayve | Application Software Engineer - Relocation to Tokyo | Detroit
+  + Wayve | Principal Application Software Engineer - Relocation to Tokyo | Detroit
+  + Wayve | Software Engineer - Runtime Platform, Robot Software | Sunnyvale
+  + Palantir | Backend Software Engineer - Infrastructure | London, United Kingdom
+  + Palantir | Senior Backend Software Engineer - Infrastructure | New York, NY
+  + Palantir | Senior Software Engineer, Network Infrastructure | New York, NY
+  + Palantir | Software Engineer - Apollo Platform | Seattle, WA
+  + Palantir | Software Engineer - Environment Platform | New York, NY
+  + Palantir | Web Application Developer - Defense | New York, NY
+  + Legora | Software Engineer | Stockholm HQ
+  + Qonto | Senior/Staff - Backend Engineer - remote friendly | Milan
+  + Spotify | Senior Backend Engineer - Audiobooks | London
+  + Spotify | Senior Backend Engineer - Music | London
+  + Spotify | Senior Backend Engineer - Subscriptions | London
+  + Celonis | Working Student AI & Management Consulting (Nordics) | Copenhagen, Denmark
+  + Celonis | Working Student Applied AI Solution Consulting (Nordics) | Copenhagen, Denmark
+  + Lovable | Software Engineer, Product | Stockholm
+  + Lovable | Software Engineer, Security (Product) | Stockholm
+  + Lovable | Software Engineer, Growth | London
+  + Lovable | Software Engineer, Enterprise | London
+  + Lovable | Software Engineer, Platform (Runtime) | Stockholm
+  + Lovable | Staff / Principal Software Engineer, Security | Stockholm
+  + Airtable | Strategic Account Executive, AI Specialist | San Francisco, CA
+
+Results saved to data/pipeline.md and data/scan-history.tsv
+
+→ Run /career-ops pipeline to evaluate new offers.
+→ Share results and get help: https://discord.gg/8pRpHETxa4
+Scanning 73 companies via API (15 skipped — no API detected)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Portal Scan — 2026-05-22
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Companies scanned:     73
+Total jobs found:      4939
+Filtered by title:     3308 removed
+Duplicates:            1622 skipped
+New offers added:      9
+
+Errors (9):
+  ✗ Ada: HTTP 404
+  ✗ Tinybird: HTTP 404
+  ✗ Travelperk: HTTP 404
+  ✗ Weights & Biases: HTTP 404
+  ✗ Clarity AI: HTTP 404
+  ✗ Factorial: HTTP 404
+  ✗ Forto: HTTP 404
+  ✗ Vinted: HTTP 404
+  ✗ Runway: HTTP 404
+
+New offers:
+  + Contentful | Senior Software Engineer - Backend & Infrastructure (f/m/d) | Berlin, Berlin, Germany
+  + SumUp | Commercial Terrain - Indépendant (Freelance) | Arcachon, Gironde, France
+  + N26 | Head of Data Science - Generative AI | Barcelona
+  + Wayve | Application Software Engineer - Relocation to Tokyo | London
+  + Wayve | Principal Application Software Engineer - Relocation to Tokyo | Israel
+  + Palantir | Senior Software Engineer, Network Infrastructure | Washington, D.C.
+  + Palantir | Software Engineer - Apollo Platform | London, United Kingdom
+  + Palantir | Web Application Developer - Defense | Palo Alto, CA
+  + Spotify | Senior Backend Engineer - Subscriptions | London
+
+Results saved to data/pipeline.md and data/scan-history.tsv
+
+→ Run /career-ops pipeline to evaluate new offers.
+→ Share results and get help: https://discord.gg/8pRpHETxa4
+Scanning 73 companies via API (15 skipped — no API detected)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Portal Scan — 2026-05-22
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Companies scanned:     73
+Total jobs found:      4942
+Filtered by title:     3310 removed
+Duplicates:            1628 skipped
+New offers added:      4
+
+Errors (9):
+  ✗ Ada: HTTP 404
+  ✗ Weights & Biases: HTTP 404
+  ✗ Travelperk: HTTP 404
+  ✗ Clarity AI: HTTP 404
+  ✗ Tinybird: HTTP 404
+  ✗ Factorial: HTTP 404
+  ✗ Forto: HTTP 404
+  ✗ Runway: HTTP 404
+  ✗ Vinted: HTTP 404
+
+New offers:
+  + Parloa | Senior Agent Architect - Partner Success  | Berlin Office; Munich Office; Remotely in Germany
+  + SumUp | Commercial Terrain - Indépendant (Freelance) | Bayonne, Pyrénées-Atlantiques, France
+  + Wayve | Application Software Engineer - Relocation to Tokyo | Singapore
+  + Wayve | Principal Application Software Engineer - Relocation to Tokyo | Singapore
+
+Results saved to data/pipeline.md and data/scan-history.tsv
+
+→ Run /career-ops pipeline to evaluate new offers.
+→ Share results and get help: https://discord.gg/8pRpHETxa4
+Scanning 73 companies via API (15 skipped — no API detected)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Portal Scan — 2026-05-22
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Companies scanned:     73
+Total jobs found:      4946
+Filtered by title:     3314 removed
+Duplicates:            1628 skipped
+New offers added:      4
+
+Errors (9):
+  ✗ Ada: HTTP 404
+  ✗ Factorial: HTTP 404
+  ✗ Weights & Biases: HTTP 404
+  ✗ Clarity AI: HTTP 404
+  ✗ Tinybird: HTTP 404
+  ✗ Forto: HTTP 404
+  ✗ Travelperk: HTTP 404
+  ✗ Runway: HTTP 404
+  ✗ Vinted: HTTP 404
+
+New offers:
+  + ElevenLabs | General Manager - Spain | Spain
+  + SumUp | Commercial Terrain - Indépendant (Freelance) | Béziers, Hérault, France
+  + Wayve | Application Software Engineer - Relocation to Tokyo | Seoul
+  + Wayve | Principal Application Software Engineer - Relocation to Tokyo | Seoul
+
+Results saved to data/pipeline.md and data/scan-history.tsv
+
+→ Run /career-ops pipeline to evaluate new offers.
+→ Share results and get help: https://discord.gg/8pRpHETxa4
+Scanning 73 companies via API (15 skipped — no API detected)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Portal Scan — 2026-05-22
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Companies scanned:     73
+Total jobs found:      4952
+Filtered by title:     3320 removed
+Duplicates:            1629 skipped
+New offers added:      3
+
+Errors (9):
+  ✗ Ada: HTTP 404
+  ✗ Weights & Biases: HTTP 404
+  ✗ Factorial: HTTP 404
+  ✗ Tinybird: HTTP 404
+  ✗ Clarity AI: HTTP 404
+  ✗ Travelperk: HTTP 404
+  ✗ Forto: HTTP 404
+  ✗ Vinted: HTTP 404
+  ✗ Runway: HTTP 404
+
+New offers:
+  + SumUp | Commercial Terrain - Indépendant (Freelance) | Perpignan, Pyrénées-Orientales, France
+  + Wayve | Principal Application Software Engineer - Relocation to Tokyo | London
+  + Hightouch | Software Engineer, Native Delivery | New York, New York, United States, San Francisco, California, United States
+
+Results saved to data/pipeline.md and data/scan-history.tsv
+
+→ Run /career-ops pipeline to evaluate new offers.
+→ Share results and get help: https://discord.gg/8pRpHETxa4
+Scanning 73 companies via API (15 skipped — no API detected)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Portal Scan — 2026-05-22
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Companies scanned:     73
+Total jobs found:      4948
+Filtered by title:     3315 removed
+Duplicates:            1629 skipped
+New offers added:      4
+
+Errors (9):
+  ✗ Ada: HTTP 404
+  ✗ Tinybird: HTTP 404
+  ✗ Weights & Biases: HTTP 404
+  ✗ Travelperk: HTTP 404
+  ✗ Clarity AI: HTTP 404
+  ✗ Factorial: HTTP 404
+  ✗ Runway: HTTP 404
+  ✗ Forto: HTTP 404
+  ✗ Vinted: This operation was aborted
+
+New offers:
+  + Anthropic | Emerging Account Executive, AI Native | New York City, NY; San Francisco, CA
+  + Anthropic | Growth Account Executive, AI Native | San Francisco, CA | New York City, NY
+  + Anthropic | Manager– Growth Sales (AI-Native) | New York City, NY
+  + SumUp | Commercial Terrain - Indépendant (Freelance) | Toulouse, Haute-Garonne, France
+
+Results saved to data/pipeline.md and data/scan-history.tsv
+
+→ Run /career-ops pipeline to evaluate new offers.
+→ Share results and get help: https://discord.gg/8pRpHETxa4
+Scanning 73 companies via API (15 skipped — no API detected)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Portal Scan — 2026-05-22
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Companies scanned:     73
+Total jobs found:      4945
+Filtered by title:     3313 removed
+Duplicates:            1631 skipped
+New offers added:      1
+
+Errors (9):
+  ✗ Ada: HTTP 404
+  ✗ Tinybird: HTTP 404
+  ✗ Travelperk: HTTP 404
+  ✗ Weights & Biases: HTTP 404
+  ✗ Clarity AI: HTTP 404
+  ✗ Factorial: HTTP 404
+  ✗ Vinted: HTTP 404
+  ✗ Forto: HTTP 404
+  ✗ Runway: HTTP 404
+
+New offers:
+  + SumUp | Commercial Terrain - Indépendant (Freelance) | Agde, Hérault, France
+
+Results saved to data/pipeline.md and data/scan-history.tsv
+
+→ Run /career-ops pipeline to evaluate new offers.
+→ Share results and get help: https://discord.gg/8pRpHETxa4
+Scanning 73 companies via API (15 skipped — no API detected)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Portal Scan — 2026-05-22
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Companies scanned:     73
+Total jobs found:      4944
+Filtered by title:     3313 removed
+Duplicates:            1630 skipped
+New offers added:      1
+
+Errors (9):
+  ✗ Ada: HTTP 404
+  ✗ Factorial: HTTP 404
+  ✗ Travelperk: HTTP 404
+  ✗ Weights & Biases: HTTP 404
+  ✗ Tinybird: HTTP 404
+  ✗ Clarity AI: HTTP 404
+  ✗ Forto: HTTP 404
+  ✗ Vinted: HTTP 404
+  ✗ Runway: HTTP 404
+
+New offers:
+  + SumUp | Commercial Terrain - Indépendant (Freelance) | La Rochelle, Charente-Maritime, France
+
+Results saved to data/pipeline.md and data/scan-history.tsv
+
+→ Run /career-ops pipeline to evaluate new offers.
+→ Share results and get help: https://discord.gg/8pRpHETxa4
+Scanning 73 companies via API (15 skipped — no API detected)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Portal Scan — 2026-05-23
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Companies scanned:     73
+Total jobs found:      4666
+Filtered by title:     3105 removed
+Duplicates:            1560 skipped
+New offers added:      1
+
+Errors (11):
+  ✗ Ada: HTTP 404
+  ✗ Factorial: HTTP 404
+  ✗ Weights & Biases: HTTP 404
+  ✗ Tinybird: HTTP 404
+  ✗ Travelperk: HTTP 404
+  ✗ Forto: HTTP 404
+  ✗ Vinted: HTTP 404
+  ✗ Runway: HTTP 404
+  ✗ Clarity AI: This operation was aborted
+  ✗ Pigment: This operation was aborted
+  ✗ Spotify: This operation was aborted
+
+New offers:
+  + SumUp | Commercial Terrain - Indépendant (Freelance) | Tarbes, Hautes-Pyrénées, France
+
+Results saved to data/pipeline.md and data/scan-history.tsv
+
+→ Run /career-ops pipeline to evaluate new offers.
+→ Share results and get help: https://discord.gg/8pRpHETxa4
+Scanning 73 companies via API (15 skipped — no API detected)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Portal Scan — 2026-05-23
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Companies scanned:     73
+Total jobs found:      4717
+Filtered by title:     3182 removed
+Duplicates:            1534 skipped
+New offers added:      1
+
+Errors (10):
+  ✗ Ada: HTTP 404
+  ✗ Factorial: HTTP 404
+  ✗ Weights & Biases: HTTP 404
+  ✗ Clarity AI: HTTP 404
+  ✗ Tinybird: HTTP 404
+  ✗ Travelperk: HTTP 404
+  ✗ Forto: HTTP 404
+  ✗ Runway: HTTP 404
+  ✗ Vinted: HTTP 404
+  ✗ Palantir: This operation was aborted
+
+New offers:
+  + SumUp | Commercial Terrain - Indépendant (Freelance) | Rennes, Ille-et-Vilaine, France
+
+Results saved to data/pipeline.md and data/scan-history.tsv
+
+→ Run /career-ops pipeline to evaluate new offers.
+→ Share results and get help: https://discord.gg/8pRpHETxa4
+Scanning 73 companies via API (15 skipped — no API detected)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Portal Scan — 2026-05-24
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Companies scanned:     73
+Total jobs found:      4942
+Filtered by title:     3313 removed
+Duplicates:            1629 skipped
+New offers added:      0
+
+Errors (9):
+  ✗ Ada: HTTP 404
+  ✗ Tinybird: HTTP 404
+  ✗ Travelperk: HTTP 404
+  ✗ Factorial: HTTP 404
+  ✗ Weights & Biases: HTTP 404
+  ✗ Clarity AI: HTTP 404
+  ✗ Forto: HTTP 404
+  ✗ Vinted: HTTP 404
+  ✗ Runway: HTTP 404
+
+→ Run /career-ops pipeline to evaluate new offers.
+→ Share results and get help: https://discord.gg/8pRpHETxa4
+Scanning 73 companies via API (15 skipped — no API detected)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Portal Scan — 2026-05-25
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Companies scanned:     73
+Total jobs found:      4939
+Filtered by title:     3310 removed
+Duplicates:            1627 skipped
+New offers added:      2
+
+Errors (9):
+  ✗ Ada: HTTP 404
+  ✗ Factorial: HTTP 404
+  ✗ Weights & Biases: HTTP 404
+  ✗ Tinybird: HTTP 404
+  ✗ Travelperk: HTTP 404
+  ✗ Clarity AI: HTTP 404
+  ✗ Vinted: HTTP 404
+  ✗ Runway: HTTP 404
+  ✗ Forto: HTTP 404
+
+New offers:
+  + Legora | React Native Engineer | Stockholm HQ
+  + Spotify | Senior Backend Engineer - Podcast | United States of America (Home Mix)
+
+Results saved to data/pipeline.md and data/scan-history.tsv
+
+→ Run /career-ops pipeline to evaluate new offers.
+→ Share results and get help: https://discord.gg/8pRpHETxa4

@@ -3,7 +3,7 @@
 ## Creative problem solver who loves to make cool sh*t. Almost two decades of engineering experience. I leverage agentic code generation to ship faster while minimizing cognitive debt.
 
 - **Location:** Vancouver BC
-- **Website:** https://jkinman.github.io
+- **Website:** https://kinman.dev
 - **LinkedIn:** https://linkedin.com/in/jkinman/
 - **Phone:** 778-788-1455
 - **Email:** joel.kinman@gmail.com
@@ -43,15 +43,26 @@ Twenty years of building things people actually use. Game dev origins, shipped A
 - Technologies: Ruby, React, LLM integrations
 - Delivered LLM-enabled content generation capabilities in production platform workflows.
 
-**Angry Mob** | Founder / Principal Consultant | Current
+**Angry Mob** | Founder / Principal Consultant | 2020 - Present
 *Personal consulting agency and one-man development studio delivering web, UI, hybrid app, automation, and cloud-based solutions across diverse client projects.*
 - Technologies: React, Next.js, Node, TypeScript, Hybrid Mobile, UI Consulting, Automation, GCP, Contentful, Firebase
 - Delivered consulting and implementation across web products, UX-focused interfaces, and hybrid app initiatives.
 - Built automation-forward, cloud-based solutions for projects spanning multiple tech stacks and delivery models.
 
-**(and so on... I have included the full experience history in the file)**
+**SwimOS** | Senior Frontend Engineer | 2018 - 2020
+*Real-time streaming data platform. Built reactive UI architecture handling thousands of concurrent data streams.*
+- Technologies: TypeScript, React, Web Agents, WebSocket, D3.js
+- Built real-time data visualization interfaces using Web Agents architecture — sub-second latency at scale
+- Designed frontend data pipelines and state management for distributed streaming systems
+
+**Disney Interactive / Radical Entertainment** | Tools Engineer | 2006 - 2014
+*AAA game development (Prototype, Scarface, Spider-Man). Built internal tools and automation pipelines.*
+- Technologies: C++, C#, Python, Custom UI frameworks, Perforce, Build systems
+- Built internal tools and automation pipelines that reduced content iteration time from hours to minutes
+- Created React-like UI frameworks (pre-React era) for game editors, asset management systems, and build pipelines
 
 ---
+
 ### Intelligent CV Narrative
 
 I started my career in game development and moved into cloud business applications, where I now focus on frontend architecture, scalable systems, and practical AI integration. For each role, I emphasize: 1. What the company does 2. My role and mandate 3. Delivery outcomes and technology scope. This profile is intentionally structured to support both human resume review and future AI job matching.

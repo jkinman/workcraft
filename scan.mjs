@@ -60,6 +60,15 @@ function detectApi(company) {
     };
   }
 
+  // Pinpoint
+  const pinpointMatch = url.match(/\/\/([^.]+)\.pinpointhq\.com/);
+  if (pinpointMatch) {
+    return {
+      type: 'pinpoint',
+      url: `https://${pinpointMatch[1]}.pinpointhq.com/postings.json`,
+    };
+  }
+
   // Greenhouse EU boards
   const ghEuMatch = url.match(/job-boards(?:\.eu)?\.greenhouse\.io\/([^/?#]+)/);
   if (ghEuMatch && !company.api) {
@@ -104,7 +113,17 @@ function parseLever(json, companyName) {
   }));
 }
 
-const PARSERS = { greenhouse: parseGreenhouse, ashby: parseAshby, lever: parseLever };
+function parsePinpoint(json, companyName) {
+  const jobs = json.data || [];
+  return jobs.map(j => ({
+    title: j.title || '',
+    url: j.url || '',
+    company: companyName,
+    location: j.location?.name || j.location || '',
+  }));
+}
+
+const PARSERS = { greenhouse: parseGreenhouse, ashby: parseAshby, lever: parseLever, pinpoint: parsePinpoint };
 
 // ── Fetch with timeout ──────────────────────────────────────────────
 

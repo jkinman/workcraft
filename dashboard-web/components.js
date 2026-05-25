@@ -1,242 +1,285 @@
-// components.js - HTML component builders for the dashboard
+// components.js - Terminal-themed HTML components
 
-function renderHeader(stats) {
+function renderHeader(stats, dashboardUrl, activeView = 'ranked') {
   const { dream, strong, good, total } = stats;
-  
+
   return `
     <div class="header">
         <div class="header-top">
-            <h1>🎯 Career-Ops Dashboard</h1>
+            <div style="display:flex;align-items:center;gap:12px;">
+                <img src="/logo.png" alt="Angry Mob" style="height:40px;width:auto;">
+                <div>
+                    <h1><a href="${dashboardUrl}/">~/career-ops/dashboard</a></h1>
+                    <div class="breadcrumb">/${activeView}</div>
+                </div>
+            </div>
             <div class="nav-buttons">
-                <a href="/?view=ranked" class="nav-btn ${stats.view === 'ranked' ? 'active' : ''}">Ranked</a>
-                <a href="/?view=pipeline" class="nav-btn ${stats.view === 'pipeline' ? 'active' : ''}">Pipeline</a>
-                <a href="/queue" class="nav-btn queue">+ Queue Job</a>
+                <a href="${dashboardUrl}/?view=ranked" class="nav-btn ${activeView === 'ranked' ? 'active' : ''}">analytics /eval</a>
+                <a href="${dashboardUrl}/?view=pipeline" class="nav-btn ${activeView === 'pipeline' ? 'active' : ''}">list_alt /tracker</a>
+                <a href="${dashboardUrl}/scan" class="nav-btn ${activeView === 'scan' ? 'active' : ''}">radar /scan</a>
             </div>
         </div>
-        <div class="stats">
-            <div class="stat">
-                <span class="stat-value" style="color: #3fb950;">${dream}</span>
-                <span>Dream</span>
+        <div class="stats-bar">
+            <div class="stat-cell">
+                <span class="stat-value dream">${dream}</span>
+                <span class="stat-label">DREAM [A]</span>
             </div>
-            <div class="stat">
-                <span class="stat-value" style="color: #f0883e;">${strong}</span>
-                <span>Strong</span>
+            <div class="stat-cell">
+                <span class="stat-value strong">${strong}</span>
+                <span class="stat-label">STRONG [B]</span>
             </div>
-            <div class="stat">
-                <span class="stat-value" style="color: #58a6ff;">${good}</span>
-                <span>Good</span>
+            <div class="stat-cell">
+                <span class="stat-value good">${good}</span>
+                <span class="stat-label">GOOD [C]</span>
             </div>
-            <div class="stat">
+            <div class="stat-cell">
                 <span class="stat-value">${total}</span>
-                <span>Total Evaluated</span>
+                <span class="stat-label">TOTAL EVAL</span>
             </div>
         </div>
     </div>
   `;
 }
 
-function renderTopPicks(jobs) {
+function renderTopPicks(jobs, dashboardUrl) {
   const dreamJobs = jobs.filter(j => j.score >= 4.5).slice(0, 3);
-  
+
   if (dreamJobs.length === 0) {
     return '';
   }
-  
+
+  const { slugify } = require('./report-parser');
+
   return `
+    <div class="section-title">PRIORITY_TARGETS [APPLY NOW]</div>
     <div class="top-picks">
-        <h2>⭐ Top Picks (Apply Now)</h2>
-        <div class="top-picks-list">
-            ${dreamJobs.map(job => `
+        ${dreamJobs.map(job => {
+          const slug = slugify(job.company, job.url, job.filename);
+          return `
+            <a href="${dashboardUrl}/job/${slug}" style="text-decoration:none;color:inherit;">
                 <div class="top-pick-item">
-                    <div class="top-pick-info">
+                    <div>
                         <div class="top-pick-company">${job.company}</div>
                         <div class="top-pick-role">${job.role}</div>
                     </div>
-                    <div class="top-pick-score">${job.score}/5</div>
+                    <span class="top-pick-score">[ ${job.score.toFixed(1)} ]</span>
                 </div>
-            `).join('')}
-        </div>
+            </a>
+          `;
+        }).join('')}
     </div>
   `;
 }
 
-function renderEvalCard(e, key) {
-  const verdictClass = e.verdict.includes('APPLY NOW') ? 'verdict-apply' : 
-                       e.verdict.includes('blocked') || e.verdict.includes('80hr') ? 'verdict-blocked' :
-                       e.verdict.includes('Consider') ? 'verdict-consider' : 'verdict-decent';
-  
+function scoreToGrade(score) {
+  if (score >= 4.5) return { grade: 'A', class: 'score-a' };
+  if (score >= 4.0) return { grade: 'B', class: 'score-b' };
+  if (score >= 3.5) return { grade: 'C', class: 'score-c' };
+  if (score >= 3.0) return { grade: 'D', class: 'score-d' };
+  return { grade: 'F', class: 'score-f' };
+}
+
+function statusToBadge(status) {
+  const map = {
+    'pending': 'status-pending',
+    'inprogress': 'status-reviewing',
+    'applied': 'status-applied',
+    'interview': 'status-interview',
+    'rejected': 'status-rejected',
+    'reviewing': 'status-reviewing'
+  };
+  return map[status?.toLowerCase().replace(/\s+/g, '')] || 'status-pending';
+}
+
+function renderEvalRow(e, dashboardUrl) {
+  const sg = scoreToGrade(e.score);
+  const { slugify } = require('./report-parser');
+  const { getState, getStateMeta } = require('./state-manager');
+  const slug = slugify(e.company, e.url, e.filename);
+  const jobDetailUrl = `${dashboardUrl}/job/${slug}`;
+  const stateInfo = getStateMeta(e.state);
+
+  // Evaluation depth badge
+  const depthBadge = e.evalDepth === 'full' ? '<span style="color:var(--success);font-size:10px;">[FULL]</span>' :
+                     e.evalDepth === 'partial' ? '<span style="color:var(--warning);font-size:10px;">[PARTIAL]</span>' :
+                     '<span style="color:var(--text-dim);font-size:10px;">[SCREEN]</span>';
+
   return `
-    <div class="eval-card">
-        <div class="eval-header">
-            <div>
-                <div class="eval-rank">#${e.rank}</div>
-                <div class="eval-company">${e.company}</div>
-                <div class="eval-role">${e.role}</div>
-                ${e.archetype ? `<div class="eval-archetype">${e.archetype}</div>` : ''}
-            </div>
-            <div class="eval-score">
-                <div class="score-value" style="color: ${e.verdict.includes('APPLY NOW') ? '#3fb950' : e.verdict.includes('blocked') ? '#f85149' : '#f0883e'}">${e.score}/5</div>
-                <div class="score-label">${e.scoreLabel}</div>
-            </div>
-        </div>
-        
-        <div class="eval-meta">
-            <div class="meta-item">
-                <span class="meta-label">Comp:</span>
-                <span class="meta-value">${e.comp}</span>
-            </div>
-            <div class="meta-item">
-                <span class="meta-label">Location:</span>
-                <span class="meta-value">${e.location}</span>
-            </div>
-        </div>
-        
-        <div class="eval-footer">
-            <div class="eval-verdict ${verdictClass}">${e.verdict}</div>
-            <div>
-                <a href="${e.url}" target="_blank" class="btn btn-view">View Job</a>
-                <button onclick="toggleDetails('details-${key}')" class="btn btn-details">Full A-G</button>
-                <button onclick="generatePDF('${e.company}', '${e.role}', '${e.archetype || ''}')" class="btn btn-generate">Generate CV</button>
-                <button onclick="generateCoverLetter('${e.company}', '${e.role}', '${e.archetype || ''}')" class="btn btn-cover">Cover Letter</button>
-            </div>
-        </div>
-        <div id="pdf-status-${key}" class="pdf-status"></div>
-        <div id="cover-status-${key}" class="pdf-status"></div>
-        
-        <div id="details-${key}" class="details-content">
-            ${renderDetails(e)}
-        </div>
-    </div>
+    <tr class="job-row" onclick="window.location='${jobDetailUrl}'">
+        <td><span class="status-badge ${e.statusClass}">[${e.state.toUpperCase()}]</span>${depthBadge}</td>
+        <td><span class="score-block ${sg.class}">[ ${sg.grade} ] ${e.score?.toFixed(1) || '?'}</span></td>
+        <td>
+            <div style="font-weight:600;">${e.role}</div>
+            <div style="font-size:12px;color:var(--text-dim);">@${e.company?.toUpperCase().replace(/\s+/g, '_')}</div>
+        </td>
+        <td style="font-size:12px;color:var(--text-dim);">${e.date || '--'}</td>
+    </tr>
+  `;
+}
+
+function renderPipelineRow(job, dashboardUrl) {
+  const badgeClass = statusToBadge(job.status);
+  const statusLabel = job.status?.toUpperCase() || 'PENDING';
+
+  return `
+    <tr class="job-row">
+        <td><span class="status-badge ${badgeClass}">[${statusLabel}]</span></td>
+        <td colspan="2">
+            <div style="font-weight:600;">${job.role}</div>
+            <div style="font-size:12px;color:var(--text-dim);">@${job.company?.toUpperCase().replace(/\s+/g, '_')}</div>
+        </td>
+        <td>
+            <a href="${job.url}" target="_blank" class="btn" style="padding:6px 10px;font-size:11px;">VIEW_RAW</a>
+        </td>
+    </tr>
   `;
 }
 
 function renderDetails(e) {
-  let detailsHtml = '<div class="details-grid">';
-  
+  let html = '';
+
   // Block A: Role Basics
-  if (e.blockA) {
-    const aContent = [];
-    if (e.blockA.level) aContent.push(`Level: ${e.blockA.level}`);
-    if (e.blockA.salary) aContent.push(`Comp: ${e.blockA.salary}`);
-    if (e.blockA.location) aContent.push(`Location: ${e.blockA.location}`);
-    if (e.blockA.stack) aContent.push(`Stack: ${e.blockA.stack}`);
-    
-    detailsHtml += `
+  if (e.blockA && Object.keys(e.blockA).length > 0) {
+    const items = [];
+    if (e.blockA.level) items.push(`LEVEL: ${e.blockA.level}`);
+    if (e.blockA.salary || e.blockA.compensation) items.push(`COMP: ${e.blockA.salary || e.blockA.compensation}`);
+    if (e.blockA.location) items.push(`LOCATION: ${e.blockA.location}`);
+    if (e.blockA.stack) items.push(`STACK: ${e.blockA.stack}`);
+    if (e.blockA.teamSize) items.push(`TEAM: ${e.blockA.teamSize}`);
+
+    html += `
       <div class="detail-block">
-        <div class="block-title">A - Role Basics</div>
-        <div class="block-value">${aContent.join('<br>')}</div>
+        <div class="block-title">A) ROLE_SUMMARY</div>
+        <div class="block-content">${items.map(i => `<div style="margin-bottom:4px;"><span class="prompt"></span> ${i}</div>`).join('')}</div>
       </div>
     `;
   }
-  
+
   // Block B: Match Analysis
-  if (e.blockB) {
-    const matches = e.blockB.matches?.slice(0, 3).join('<br>• ') || '';
-    const gaps = e.blockB.gaps?.slice(0, 2).join('<br>• ') || '';
-    
-    detailsHtml += `
-      <div class="detail-block">
-        <div class="block-title">B - Match Analysis</div>
-        <div class="block-value">
-          <strong>Matches:</strong><br>• ${matches}<br><br>
-          <strong>Gaps:</strong><br>• ${gaps}
+  if (e.blockB && (e.blockB.matches?.length || e.blockB.gaps?.length)) {
+    const matches = e.blockB.matches?.map(m => `<li class="match">${m}</li>`).join('') || '';
+    const gaps = e.blockB.gaps?.map(g => `<li class="gap">${g}</li>`).join('') || '';
+
+    html += `
+      <div class="detail-block success">
+        <div class="block-title">B) CV_MATCH_SIGNAL</div>
+        <div class="block-content">
+          <ul>${matches}</ul>
+          ${gaps ? `<div style="margin-top:8px;color:var(--error);font-size:12px;">GAPS:</div><ul>${gaps}</ul>` : ''}
         </div>
       </div>
     `;
   }
-  
+
   // Block C: Strategy
-  if (e.blockC) {
-    const cContent = [];
-    if (e.blockC.targetLevel) cContent.push(`Target: ${e.blockC.targetLevel}`);
-    if (e.blockC.strategy) cContent.push(`Strategy: ${e.blockC.strategy}`);
-    
-    detailsHtml += `
+  if (e.blockC && (e.blockC.targetLevel || e.blockC.strategy)) {
+    html += `
       <div class="detail-block">
-        <div class="block-title">C - Application Strategy</div>
-        <div class="block-value">${cContent.join('<br>')}</div>
+        <div class="block-title">C) LEVELING_PATH</div>
+        <div class="block-content">
+          ${e.blockC.targetLevel ? `<div><span class="prompt"></span> TARGET: ${e.blockC.targetLevel}</div>` : ''}
+          ${e.blockC.strategy ? `<div style="margin-top:8px;">${e.blockC.strategy}</div>` : ''}
+        </div>
       </div>
     `;
   }
-  
+
   // Block D: Compensation
-  if (e.blockD) {
-    detailsHtml += `
-      <div class="detail-block">
-        <div class="block-title">D - Compensation</div>
-        <div class="block-value">${e.blockD.notes || 'N/A'}</div>
+  if (e.blockD && (e.blockD.notes || e.blockD.assessment)) {
+    html += `
+      <div class="detail-block warning">
+        <div class="block-title">D) COMP_AND_DEMAND</div>
+        <div class="block-content">${e.blockD.notes || e.blockD.assessment || ''}</div>
       </div>
     `;
   }
-  
-  // Block E: Hooks & Positioning
-  if (e.blockE) {
-    const hooks = e.blockE.hooks?.slice(0, 2).join('<br>• ') || '';
-    const blocker = e.blockE.blocker ? `<br><br><strong>Blocker:</strong> ${e.blockE.blocker}` : '';
-    
-    detailsHtml += `
+
+  // Block E: Hooks
+  if (e.blockE && e.blockE.hooks?.length) {
+    html += `
       <div class="detail-block">
-        <div class="block-title">E - Positioning</div>
-        <div class="block-value">• ${hooks}${blocker}</div>
+        <div class="block-title">E) POSITIONING_HOOKS</div>
+        <div class="block-content">
+          <ul>${e.blockE.hooks.map(h => `<li>${h}</li>`).join('')}</ul>
+        </div>
       </div>
     `;
   }
-  
-  // Block F: Interview Stories
-  if (e.blockF) {
-    const stories = e.blockF.stories?.slice(0, 3).join('<br>• ') || '';
-    
-    detailsHtml += `
+
+  // Block F: Stories
+  if (e.blockF && e.blockF.stories?.length) {
+    html += `
       <div class="detail-block">
-        <div class="block-title">F - Interview Stories</div>
-        <div class="block-value">• ${stories}</div>
+        <div class="block-title">F) INTERVIEW_STORIES</div>
+        <div class="block-content">
+          <ul>${e.blockF.stories.map(s => `<li>${s}</li>`).join('')}</ul>
+        </div>
       </div>
     `;
   }
-  
+
   // Block G: Legitimacy
-  if (e.blockG) {
-    detailsHtml += `
-      <div class="detail-block">
-        <div class="block-title">G - Legitimacy Check</div>
-        <div class="block-value">${e.blockG.legitimacy || 'N/A'}</div>
+  if (e.blockG && e.blockG.legitimacy) {
+    html += `
+      <div class="detail-block ${e.blockG.legitimacy?.toLowerCase().includes('high') ? 'success' : 'warning'}">
+        <div class="block-title">G) LEGITIMACY_CHECK</div>
+        <div class="block-content">${e.blockG.legitimacy}</div>
       </div>
     `;
   }
-  
-  detailsHtml += '</div>';
-  return detailsHtml;
+
+  return html;
 }
 
-function renderPipelineView(jobs) {
-  if (jobs.pending.length === 0) {
-    return '<div class="section-title">Raw Pipeline</div><div class="empty-state">No pending jobs in pipeline</div>';
+function renderPipelineView(jobs, dashboardUrl) {
+  if (!jobs.pending || jobs.pending.length === 0) {
+    return '<div class="section-title">RAW_PIPELINE</div><div class="empty-state">No pending jobs in pipeline</div>';
   }
-  
+
   return `
-    <div class="section-title">Raw Pipeline (${jobs.total} jobs)</div>
-    <div class="job-list">
-        ${jobs.pending.map(job => `
-            <div class="job-item">
-                <div>
-                    <div class="job-company">${job.company}</div>
-                    <div class="job-role">${job.role}</div>
-                </div>
-                <div style="display: flex; gap: 0.5rem; align-items: center;">
-                    <span class="status-badge status-${job.status}">${job.status}</span>
-                    <a href="${job.url}" target="_blank" class="btn btn-view">View</a>
-                    <button onclick="queueForEval('${job.url}', '${job.company}', '${job.role}')" class="btn btn-eval">Evaluate</button>
-                </div>
-            </div>
-        `).join('')}
-    </div>
+    <div class="section-title">RAW_PIPELINE (${jobs.total} JOBS)</div>
+    <table class="job-table">
+        <thead>
+            <tr>
+                <th>STATUS</th>
+                <th colspan="2">ROLE / COMPANY</th>
+                <th>ACTION</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${jobs.pending.map(job => renderPipelineRow(job, dashboardUrl)).join('')}
+        </tbody>
+    </table>
   `;
 }
 
-module.exports = { 
-  renderHeader, 
-  renderTopPicks, 
-  renderEvalCard, 
+function renderEvalTable(evals, dashboardUrl) {
+  if (evals.length === 0) {
+    return '<div class="empty-state">No evaluations found</div>';
+  }
+
+  return `
+    <table class="job-table">
+        <thead>
+            <tr>
+                <th>STATUS</th>
+                <th>SCORE</th>
+                <th>ROLE / COMPANY</th>
+                <th>TIMESTAMP</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${evals.map(e => renderEvalRow(e, dashboardUrl)).join('')}
+        </tbody>
+    </table>
+  `;
+}
+
+module.exports = {
+  renderHeader,
+  renderTopPicks,
   renderDetails,
-  renderPipelineView 
+  renderPipelineView,
+  renderEvalTable,
+  scoreToGrade
 };

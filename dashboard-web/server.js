@@ -2,9 +2,8 @@
 const express = require('express');
 const CONFIG = require('./config');
 const { parsePipeline, addToPipeline } = require('./pipeline');
-const { renderDashboard, renderQueueForm } = require('./views');
+const { renderDashboard, renderQueueForm, renderJobDetail, renderScanPage } = require('./views');
 const { generateTailoredCV } = require('./pdf-generator');
-const { generateCoverLetter } = require('./cover-letter-generator');
 
 const app = express();
 
@@ -13,15 +12,42 @@ app.use(express.static('public'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Make dashboard URL available to all views
+app.locals.dashboardUrl = CONFIG.DASHBOARD_URL;
+
 // Routes
 app.get('/', (req, res) => {
   const view = req.query.view || 'ranked';
   const jobs = parsePipeline();
-  res.send(renderDashboard(view, jobs));
+  res.send(renderDashboard(view, jobs, req));
+});
+
+app.get('/scan', (req, res) => {
+  res.send(renderScanPage(req));
+});
+
+app.get('/job/:slug', (req, res) => {
+  const { slug } = req.params;
+  const { getReportBySlug } = require('./report-parser');
+  const job = getReportBySlug(slug);
+
+  if (!job) {
+    return res.status(404).send(`
+      <!DOCTYPE html>
+      <html><head><title>[404] Not Found</title></head>
+      <body style="background:#121221;color:#e3e0f7;font-family:'Space Mono',monospace;padding:2rem;">
+        <div style="font-size:24px;font-weight:700;color:#ffb4ab;">[ERR] JOB_NOT_FOUND</div>
+        <div style="margin-top:12px;color:#90909a;">No evaluation found for slug: ${slug}</div>
+        <a href="/" style="color:#bac3ff;display:inline-block;margin-top:16px;"><span style="color:#99d595;">></span> RETURN_TO_DASHBOARD</a>
+      </body></html>
+    `);
+  }
+
+  res.send(renderJobDetail(job, req));
 });
 
 app.get('/queue', (req, res) => {
-  res.send(renderQueueForm());
+  res.send(renderQueueForm(req));
 });
 
 app.post('/api/queue', (req, res) => {
@@ -81,64 +107,84 @@ app.post('/api/search-location', async (req, res) => {
   });
 });
 
-// Cover Letter Generation endpoint
-app.post('/api/generate-cover-letter', async (req, res) => {
-  const { company, role, jobDescription, archetype } = req.body;
-  
-  if (!company || !role) {
-    return res.status(400).json({ error: 'Company and role are required' });
-  }
+// PDF Generation endpoints
+const { generateResumePDF, generateCoverLetterPDF, generateEvalReportPDF, generateFullEvalReportPDF } = require('./pdf-bundle-generator');
+
+app.post('/api/generate-resume', async (req, res) => {
+  const { company, role, jobDescription } = req.body;
+  if (!company || !role) return res.status(400).json({ error: 'Company and role required' });
   
   try {
-    const result = await generateCoverLetter(company, role, jobDescription || '', archetype || '');
-    
-    if (result.success) {
-      res.json({
-        success: true,
-        message: `Cover letter generated for ${company}`,
-        text: result.text,
-        textFilename: result.textFilename,
-        pdfFilename: result.pdfFilename,
-        downloadUrl: result.downloadUrl,
-        company: result.company,
-        role: result.role
-      });
-    } else {
-      res.status(500).json({ error: result.error || 'Cover letter generation failed' });
-    }
+    const result = await generateResumePDF(company, role, jobDescription || '');
+    res.json(result);
   } catch (error) {
-    console.error('Cover Letter Generation Error:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Resume generation error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// PDF Generation endpoint
-app.post('/api/generate-pdf', async (req, res) => {
+app.post('/api/generate-cover-letter', async (req, res) => {
   const { company, role, jobDescription } = req.body;
-  
-  if (!company || !role) {
-    return res.status(400).json({ error: 'Company and role are required' });
-  }
+  if (!company || !role) return res.status(400).json({ error: 'Company and role required' });
   
   try {
-    const result = await generateTailoredCV(company, role, jobDescription || '');
-    
-    if (result.success) {
-      res.json({
-        success: true,
-        message: `PDF generated: ${result.filename}`,
-        filename: result.filename,
-        path: result.path,
-        keywords: result.keywords,
-        format: result.format,
-        downloadUrl: `/download-pdf?file=${encodeURIComponent(result.filename)}`
-      });
-    } else {
-      res.status(500).json({ error: result.error || 'PDF generation failed' });
-    }
+    const result = await generateCoverLetterPDF(company, role, jobDescription || '');
+    res.json(result);
   } catch (error) {
-    console.error('PDF Generation Error:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Cover letter generation error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/generate-eval-report', async (req, res) => {
+  const { company, role } = req.body;
+  if (!company) return res.status(400).json({ error: 'Company required' });
+  
+  try {
+    const { getReportBySlug, getRawReportContent } = require('./report-parser');
+    const slug = req.body.slug || company.toLowerCase().replace(/\s+/g, '-');
+    const job = getReportBySlug(slug);
+    if (!job) return res.status(404).json({ error: 'Job evaluation not found' });
+    
+    const rawMarkdown = getRawReportContent(slug);
+    const result = await generateEvalReportPDF(job, rawMarkdown);
+    res.json(result);
+  } catch (error) {
+    console.error('Eval report generation error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/generate-full-eval', async (req, res) => {
+  const { company, role } = req.body;
+  if (!company) return res.status(400).json({ error: 'Company required' });
+  
+  try {
+    const { getReportBySlug, getRawReportContent } = require('./report-parser');
+    const slug = req.body.slug || company.toLowerCase().replace(/\s+/g, '-');
+    const job = getReportBySlug(slug);
+    if (!job) return res.status(404).json({ error: 'Job evaluation not found' });
+    
+    const rawMarkdown = getRawReportContent(slug);
+    const result = await generateFullEvalReportPDF(job, rawMarkdown);
+    res.json(result);
+  } catch (error) {
+    console.error('Full eval report generation error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Legacy PDF endpoint (redirects to resume)
+app.post('/api/generate-pdf', async (req, res) => {
+  const { company, role, jobDescription } = req.body;
+  if (!company || !role) return res.status(400).json({ error: 'Company and role required' });
+  
+  try {
+    const result = await generateResumePDF(company, role, jobDescription || '');
+    res.json(result);
+  } catch (error) {
+    console.error('PDF generation error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -152,8 +198,8 @@ app.get('/download-pdf', (req, res) => {
     return res.status(400).json({ error: 'Filename required' });
   }
   
-  // Security: only allow filenames with expected pattern
-  if (!filename.match(/^cv-[a-z0-9-]+-\d{4}-\d{2}-\d{2}\.pdf$/)) {
+  // Security: allow expected filename patterns
+  if (!filename.match(/^(cv|cover-letter|eval-report|full-eval)-[a-z0-9-]+-\d{4}-\d{2}-\d{2}\.pdf$/)) {
     return res.status(400).json({ error: 'Invalid filename' });
   }
   
@@ -171,6 +217,18 @@ app.get('/download-pdf', (req, res) => {
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// State transition endpoint
+app.post('/api/transition-state', (req, res) => {
+  const { slug, newState } = req.body;
+  if (!slug || !newState) {
+    return res.status(400).json({ error: 'Slug and newState required' });
+  }
+
+  const { transitionState } = require('./state-manager');
+  const result = transitionState(slug, newState);
+  res.json(result);
 });
 
 app.listen(CONFIG.PORT, '0.0.0.0', () => {

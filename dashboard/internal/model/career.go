@@ -7,6 +7,7 @@ type CareerApplication struct {
 	Company      string
 	Role         string
 	Status       string
+	StatusClass  string
 	Score        float64
 	ScoreRaw     string
 	HasPDF       bool
