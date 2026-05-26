@@ -3,10 +3,11 @@ const { getEvaluations } = require('./evaluations');
 const { getStyles } = require('./styles');
 const { getScripts } = require('./scripts');
 const { renderHeader, renderTopPicks, renderDetails, renderPipelineView, renderEvalTable, scoreToGrade } = require('./components');
+const CONFIG = require('./config');
 
 function renderDashboard(view, jobs, req) {
   const evals = getEvaluations();
-  const dashboardUrl = req?.app?.locals?.dashboardUrl || 'http://192.168.0.50:3000';
+  const dashboardUrl = req?.app?.locals?.dashboardUrl || CONFIG.DASHBOARD_URL;
 
   const dream = evals.filter(e => e.score >= 4.5).length;
   const strong = evals.filter(e => e.score >= 4.0 && e.score < 4.5).length;
@@ -43,7 +44,7 @@ function renderDashboard(view, jobs, req) {
 }
 
 function renderJobDetail(job, req) {
-  const dashboardUrl = req?.app?.locals?.dashboardUrl || 'http://192.168.0.50:3000';
+  const dashboardUrl = req?.app?.locals?.dashboardUrl || CONFIG.DASHBOARD_URL;
   const sg = scoreToGrade(job.score);
   const { getRawReportContent, renderMarkdownToHtml, slugify } = require('./report-parser');
 
@@ -222,7 +223,7 @@ function renderJobDetail(job, req) {
 const { getScanStats } = require('./scan-data');
 
 function renderScanPage(req) {
-  const dashboardUrl = req?.app?.locals?.dashboardUrl || 'http://192.168.0.50:3000';
+  const dashboardUrl = req?.app?.locals?.dashboardUrl || CONFIG.DASHBOARD_URL;
   const stats = getScanStats();
 
   return `<!DOCTYPE html>
@@ -507,7 +508,7 @@ function renderScanPage(req) {
 }
 
 function renderQueueForm(req) {
-  const dashboardUrl = req?.app?.locals?.dashboardUrl || 'http://192.168.0.50:3000';
+  const dashboardUrl = req?.app?.locals?.dashboardUrl || CONFIG.DASHBOARD_URL;
 
   return `<!DOCTYPE html>
 <html lang="en">

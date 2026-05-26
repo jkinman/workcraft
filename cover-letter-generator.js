@@ -17,12 +17,12 @@ function loadResumeData() {
 function loadProfile() {
   const profilePath = path.join(CONFIG.CAREER_OPS_PATH, 'config', 'profile.yml');
   const defaultProfile = {
-    full_name: "Joel Kinman",
-    email: "joel.kinman@gmail.com",
-    phone: "778-788-1455",
-    location: "Vancouver BC",
-    linkedin: "linkedin.com/in/jkinman",
-    portfolio_url: "https://kinman.dev"
+    full_name: "Career-Ops Candidate",
+    email: "",
+    phone: "",
+    location: "",
+    linkedin: "",
+    portfolio_url: ""
   };
   
   if (!fs.existsSync(profilePath)) {
