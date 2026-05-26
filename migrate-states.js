@@ -34,9 +34,9 @@ const lines = appContent.split('\\n');
 const newLines = lines.map(line => {
     if (line.includes('Gumloop') && line.includes('024')) return line.replace('Evaluated', 'Applied');
     if (line.includes('Gumloop') && line.includes('023')) return line.replace('Evaluated', 'Interview');
-    if (line.includes('WorkOS') && line.includes('018')) return line.replace('Evaluada', 'Offer');
-    if (line.includes('Sierra') && line.includes('016')) return line.replace('Evaluada', 'Rejected');
-    if (line.includes('Vercel') && line.includes('019')) return line.replace('Evaluada', 'Applied');
+    if (line.includes('WorkOS') && line.includes('018')) return line.replace('Evaluated', 'Offer');
+    if (line.includes('Sierra') && line.includes('016')) return line.replace('Evaluated', 'Rejected');
+    if (line.includes('Vercel') && line.includes('019')) return line.replace('Evaluated', 'Applied');
     return line;
 });
 fs.writeFileSync(applicationsMdPath, newLines.join('\\n'));

@@ -99,14 +99,21 @@ function renderEvalRow(e, dashboardUrl) {
   const jobDetailUrl = `${dashboardUrl}/job/${slug}`;
   const stateInfo = getStateMeta(e.state);
 
-  // Evaluation depth badge
-  const depthBadge = e.evalDepth === 'full' ? '<span style="color:var(--success);font-size:10px;">[FULL]</span>' :
-                     e.evalDepth === 'partial' ? '<span style="color:var(--warning);font-size:10px;">[PARTIAL]</span>' :
-                     '<span style="color:var(--text-dim);font-size:10px;">[SCREEN]</span>';
+  // Evaluation depth indicator (3 states: screen / partial / full)
+  const depthDots = e.evalDepth === 'full' ? 
+    '<span style="color:var(--success);font-size:10px;" title="Full A-G evaluation">[●●●]</span>' :
+    e.evalDepth === 'partial' ? 
+    '<span style="color:var(--warning);font-size:10px;" title="Partial analysis">[●●○]</span>' :
+    '<span style="color:var(--text-dim);font-size:10px;" title="Quick screen">[●○○]</span>';
 
   return `
     <tr class="job-row" onclick="window.location='${jobDetailUrl}'">
-        <td><span class="status-badge ${e.statusClass}">[${e.state.toUpperCase()}]</span>${depthBadge}</td>
+        <td>
+            <div style="display:flex;align-items:center;gap:6px;">
+                <span class="status-badge ${e.statusClass}">[${e.state.toUpperCase()}]</span>
+                <span style="display:flex;align-items:center;" title="${e.evalDepth === 'full' ? 'Full A-G analysis' : e.evalDepth === 'partial' ? 'Partial analysis' : 'Quick screen'}">${depthDots}</span>
+            </div>
+        </td>
         <td><span class="score-block ${sg.class}">[ ${sg.grade} ] ${e.score?.toFixed(1) || '?'}</span></td>
         <td>
             <div style="font-weight:600;">${e.role}</div>

@@ -24,19 +24,19 @@ function parsePipeline() {
   let currentSection = null;
 
   for (const line of lines) {
-    if (line.includes('Pendientes') || line.includes('Pending')) {
+    if (line.includes('Pending')) {
       currentSection = 'pending';
       continue;
     }
-    if (line.includes('En Progreso') || line.includes('In Progress')) {
+    if (line.includes('In Progress')) {
       currentSection = 'inProgress';
       continue;
     }
-    if (line.includes('Aplicado') || line.includes('Applied')) {
+    if (line.includes('Applied')) {
       currentSection = 'applied';
       continue;
     }
-    if (line.includes('Rechazado') || line.includes('Rejected')) {
+    if (line.includes('Rejected')) {
       currentSection = 'rejected';
       continue;
     }
@@ -96,11 +96,11 @@ function addToPipeline(url, notes) {
     content = fs.readFileSync(pipelinePath, 'utf8');
   }
   
-  if (!content.includes('Pendientes') && !content.includes('Pending')) {
-    content += '\n## Pendientes\n\n';
+  if (!content.includes('Pending')) {
+    content += '\n## Pending\n\n';
   }
   
-  const pendingIndex = content.indexOf('## Pendientes') || content.indexOf('## Pending');
+  const pendingIndex = content.indexOf('## Pending');
   if (pendingIndex !== -1) {
     const sectionEnd = content.indexOf('##', pendingIndex + 1);
     if (sectionEnd !== -1) {
@@ -109,7 +109,7 @@ function addToPipeline(url, notes) {
       content += '\n' + entry + '\n';
     }
   } else {
-    content += '\n## Pendientes\n\n' + entry + '\n';
+    content += '\n## Pending\n\n' + entry + '\n';
   }
   
   fs.writeFileSync(pipelinePath, content);
