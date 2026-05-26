@@ -160,11 +160,12 @@ Save complete evaluation to `reports/{###}-{company-slug}-{YYYY-MM-DD}.md`.
 # Evaluation: {Company} — {Role}
 
 **Date:** {YYYY-MM-DD}
+**URL:** {job posting URL}
 **Archetype:** {detected}
 **Score:** {X/5}
 **Legitimacy:** {High Confidence | Proceed with Caution | Suspicious}
 **PDF:** {path or pending}
-
+```
 ---
 
 ## A) Role Summary

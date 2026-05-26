@@ -214,6 +214,53 @@ app.get('/download-pdf', (req, res) => {
   fs.createReadStream(filePath).pipe(res);
 });
 
+// Scan endpoint
+const { execFile } = require('child_process');
+const util = require('util');
+const execFilePromise = util.promisify(execFile);
+
+app.post('/api/scan', async (req, res) => {
+  const dryRun = req.query.dryRun === 'true';
+  const deepDive = req.query.deepDive === 'true';
+  
+  try {
+    const args = [];
+    if (dryRun) args.push('--dry-run');
+    if (deepDive) args.push('--deep-dive');
+    
+    const { stdout, stderr } = await execFilePromise('node', ['scan.mjs', ...args], {
+      cwd: CONFIG.CAREER_OPS_PATH,
+      timeout: deepDive ? 300_000 : 120_000, // 5 min for deep-dive (browser scraping)
+      maxBuffer: 1024 * 1024 // 1MB output buffer
+    });
+
+    // Parse scan summary from output
+    const companiesMatch = stdout.match(/Companies scanned:\s+(\d+)/);
+    const foundMatch = stdout.match(/Total jobs found:\s+(\d+)/);
+    const newMatch = stdout.match(/New offers added:\s+(\d+)/);
+    const tasksMatch = stdout.match(/Tasks run:\s+(\d+)/);
+
+    res.json({
+      success: true,
+      dryRun,
+      deepDive,
+      companies: parseInt(companiesMatch?.[1] || '0'),
+      tasks: parseInt(tasksMatch?.[1] || '0'),
+      totalFound: parseInt(foundMatch?.[1] || '0'),
+      newOffers: parseInt(newMatch?.[1] || '0'),
+      output: stdout.slice(-2000) // Last 2000 chars for debugging
+    });
+  } catch (error) {
+    console.error('Scan error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stderr: error.stderr?.slice(-500),
+      stdout: error.stdout?.slice(-500)
+    });
+  }
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

@@ -19,6 +19,20 @@ import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } fr
 import yaml from 'js-yaml';
 const parseYaml = yaml.load;
 
+// Deep-dive scrapers (optional — lazy-loaded so scan.mjs works without them)
+let scraperModule = null;
+async function getScrapers() {
+  if (!scraperModule) {
+    try {
+      scraperModule = await import('./lib/scrapers/index.mjs');
+    } catch (e) {
+      console.warn('[scan] Deep-dive scrapers not available:', e.message);
+      scraperModule = null;
+    }
+  }
+  return scraperModule;
+}
+
 // ── Config ──────────────────────────────────────────────────────────
 
 const PORTALS_PATH = 'portals.yml';
@@ -209,19 +223,19 @@ function appendToPipeline(offers) {
 
   let text = readFileSync(PIPELINE_PATH, 'utf-8');
 
-  // Find "## Pendientes" section and append after it
-  const marker = '## Pendientes';
+  // Find "## Pending" section and append after it
+  const marker = '## Pending';
   const idx = text.indexOf(marker);
   if (idx === -1) {
-    // No Pendientes section — append at end before Procesadas
-    const procIdx = text.indexOf('## Procesadas');
+    // No Pending section — append at end before Processed
+    const procIdx = text.indexOf('## Processed');
     const insertAt = procIdx === -1 ? text.length : procIdx;
     const block = `\n${marker}\n\n` + offers.map(o =>
       `- [ ] ${o.url} | ${o.company} | ${o.title}`
     ).join('\n') + '\n\n';
     text = text.slice(0, insertAt) + block + text.slice(insertAt);
   } else {
-    // Find the end of existing Pendientes content (next ## or end)
+    // Find the end of existing Pending content (next ## or end)
     const afterMarker = idx + marker.length;
     const nextSection = text.indexOf('\n## ', afterMarker);
     const insertAt = nextSection === -1 ? text.length : nextSection;
@@ -273,6 +287,7 @@ async function main() {
   const dryRun = args.includes('--dry-run');
   const companyFlag = args.indexOf('--company');
   const filterCompany = companyFlag !== -1 ? args[companyFlag + 1]?.toLowerCase() : null;
+  const deepDive = args.includes('--deep-dive');
 
   // 1. Read portals.yml
   if (!existsSync(PORTALS_PATH)) {
@@ -283,6 +298,100 @@ async function main() {
   const config = parseYaml(readFileSync(PORTALS_PATH, 'utf-8'));
   const companies = config.tracked_companies || [];
   const titleFilter = buildTitleFilter(config.title_filter);
+
+  // ── DEEP DIVE MODE ──────────────────────────────────────────────────
+  if (deepDive) {
+    const scrapers = await getScrapers();
+    if (!scrapers) {
+      console.error('Error: Deep-dive scrapers not available. Run: npm install');
+      process.exit(1);
+    }
+
+    const ddConfig = config.deep_dive || {};
+    const tasks = (ddConfig.tasks || []).filter(t => t.enabled !== false);
+    if (tasks.length === 0) {
+      console.error('Error: No deep-dive tasks configured in portals.yml. Add a deep_dive section.');
+      process.exit(1);
+    }
+
+    console.log(`Deep-dive scan: ${tasks.length} task(s) configured`);
+    if (dryRun) console.log('(dry run — no files will be written)\n');
+
+    // Load dedup sets
+    const seenUrls = loadSeenUrls();
+    const seenCompanyRoles = loadSeenCompanyRoles();
+
+    const date = new Date().toISOString().slice(0, 10);
+    let totalFound = 0;
+    let totalFiltered = 0;
+    let totalDupes = 0;
+    const newOffers = [];
+
+    const results = await scrapers.runDeepDive(tasks, {
+      headless: ddConfig.headless !== false,
+      concurrency: ddConfig.concurrency || 1,
+      onProgress: (name, count) => console.log(`  → ${name}: ${count} jobs scraped`),
+    });
+
+    for (const [name, result] of Object.entries(results)) {
+      if (result.errors) {
+        console.warn(`  ✗ ${name}: ${result.errors}`);
+        continue;
+      }
+      totalFound += result.jobs.length;
+      for (const job of result.jobs) {
+        if (!titleFilter(job.title)) {
+          totalFiltered++;
+          continue;
+        }
+        if (seenUrls.has(job.url)) {
+          totalDupes++;
+          continue;
+        }
+        const key = `${job.company.toLowerCase()}::${job.title.toLowerCase()}`;
+        if (seenCompanyRoles.has(key)) {
+          totalDupes++;
+          continue;
+        }
+        seenUrls.add(job.url);
+        seenCompanyRoles.add(key);
+        newOffers.push({ ...job, source: job.source || name });
+      }
+    }
+
+    // Write results
+    if (!dryRun && newOffers.length > 0) {
+      appendToPipeline(newOffers);
+      appendToScanHistory(newOffers, date);
+    }
+
+    // Print summary
+    console.log(`\n${'━'.repeat(45)}`);
+    console.log(`Deep-Dive Scan — ${date}`);
+    console.log(`${'━'.repeat(45)}`);
+    console.log(`Tasks run:             ${tasks.length}`);
+    console.log(`Total jobs found:      ${totalFound}`);
+    console.log(`Filtered by title:     ${totalFiltered} removed`);
+    console.log(`Duplicates:            ${totalDupes} skipped`);
+    console.log(`New offers added:      ${newOffers.length}`);
+
+    if (newOffers.length > 0) {
+      console.log('\nNew offers:');
+      for (const o of newOffers) {
+        console.log(`  + ${o.company} | ${o.title} | ${o.location || 'N/A'}`);
+      }
+      if (dryRun) {
+        console.log('\n(dry run — run without --dry-run to save results)');
+      } else {
+        console.log(`\nResults saved to ${PIPELINE_PATH} and ${SCAN_HISTORY_PATH}`);
+      }
+    }
+
+    console.log(`\n→ Run /career-ops pipeline to evaluate new offers.`);
+    return;
+  }
+
+  // ── STANDARD API SCAN ───────────────────────────────────────────────
 
   // 2. Filter to enabled companies with detectable APIs
   const targets = companies

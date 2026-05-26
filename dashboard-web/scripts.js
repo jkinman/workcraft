@@ -239,6 +239,38 @@ function getScripts() {
                 alert('Network error. Please try again.');
             }
         }
+        
+        async function queueForFullEval(company, role, url) {
+            if (!confirm('Queue ' + company + ' - ' + role + ' for FULL A-G analysis?')) return;
+            
+            // Handle missing or placeholder URLs
+            let jobUrl = url;
+            if (!jobUrl || jobUrl === '#' || jobUrl === '') {
+                jobUrl = prompt('Enter job posting URL for ' + company + ':');
+                if (!jobUrl) {
+                    alert('URL required to queue for analysis');
+                    return;
+                }
+            }
+            
+            try {
+                const response = await fetch('/api/queue', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: jobUrl, notes: role + ' [FULL A-G REQUESTED]' })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('Queued for FULL A-G analysis! Tell Squidworth to run the complete evaluation.');
+                } else {
+                    alert('Error: ' + (data.error || 'Failed to queue'));
+                }
+            } catch (error) {
+                alert('Network error. Please try again.');
+            }
+        }
     </script>
   `;
 }

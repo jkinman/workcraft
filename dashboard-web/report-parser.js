@@ -71,10 +71,10 @@ function parseReport(content, filename) {
     const line = lines[i].trim();
 
     // Title line variants
-    // "# Evaluation: Company — Role" or "# Evaluation Report: Company — Role" or "# Evaluación: Company — Role"
+    // "# Evaluation: Company — Role" or "# Evaluation Report: Company — Role" or "# Evaluation: Company — Role"
     // or "# Job Evaluation: Company — Role"
-    if (line.match(/^#\s*(Evaluation|Evaluación|Evaluation Report|Job Evaluation):\s*(.+)/i)) {
-      const match = line.match(/^#\s*(?:Evaluation|Evaluación|Evaluation Report|Job Evaluation):\s*(.+?)\s*[—\-–]\s*(.+)$/i);
+    if (line.match(/^#\s*(Evaluation|Evaluation|Evaluation Report|Job Evaluation):\s*(.+)/i)) {
+      const match = line.match(/^#\s*(?:Evaluation|Evaluation|Evaluation Report|Job Evaluation):\s*(.+?)\s*[—\-–]\s*(.+)$/i);
       if (match) {
         evalObj.company = match[1].trim();
         evalObj.role = match[2].trim();
