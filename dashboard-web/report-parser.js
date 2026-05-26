@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { marked } = require('marked');
+const sanitizeHtml = require('sanitize-html');
 const CONFIG = require('./config');
 
 function parseAllReports() {
@@ -457,9 +458,20 @@ function renderMarkdownToHtml(markdown) {
   if (!markdown) return '';
   // Strip YAML frontmatter before rendering
   const cleanMarkdown = markdown.replace(/^---\n[\s\S]*?\n---\n\n?/, '');
-  return marked.parse(cleanMarkdown, {
+  const rendered = marked.parse(cleanMarkdown, {
     headerIds: false,
     mangle: false
+  });
+  return sanitizeHtml(rendered, {
+    allowedTags: sanitizeHtml.defaults.allowedTags.concat(['h1', 'h2', 'img']),
+    allowedAttributes: {
+      ...sanitizeHtml.defaults.allowedAttributes,
+      a: ['href', 'name', 'target', 'rel'],
+      img: ['src', 'alt', 'title']
+    },
+    transformTags: {
+      a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer' })
+    }
   });
 }
 

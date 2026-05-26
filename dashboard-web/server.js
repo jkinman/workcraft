@@ -280,8 +280,7 @@ app.post('/api/transition-state', (req, res) => {
 
 app.listen(CONFIG.PORT, '0.0.0.0', () => {
   console.log(`Career-Ops Web Dashboard running on http://0.0.0.0:${CONFIG.PORT}`);
-  console.log(`Local network: http://192.168.0.50:${CONFIG.PORT}`);
-  console.log(`Tailscale VPN: http://100.100.130.37:${CONFIG.PORT}`);
+  console.log(`Dashboard URL: ${CONFIG.DASHBOARD_URL}`);
   console.log(`PDF Generation: POST /api/generate-pdf`);
   console.log(`PDF Download: GET /download-pdf?file=...`);
 });

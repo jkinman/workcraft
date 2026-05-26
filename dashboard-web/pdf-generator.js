@@ -31,13 +31,13 @@ function loadProfile() {
   
   // Default profile based on cv.md content
   const defaultProfile = {
-    full_name: "Joel Kinman",
-    email: "joel.kinman@gmail.com",
-    phone: "778-788-1455",
-    location: "Vancouver BC",
-    linkedin: "linkedin.com/in/jkinman",
-    portfolio_url: "https://kinman.dev",
-    github: "github.com/jkinman"
+    full_name: "Career-Ops Candidate",
+    email: "",
+    phone: "",
+    location: "",
+    linkedin: "",
+    portfolio_url: "",
+    github: ""
   };
   
   if (!fs.existsSync(profilePath)) {

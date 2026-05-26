@@ -10,6 +10,10 @@ function parseCV() {
   }
 
   const content = fs.readFileSync(cvPath, 'utf8');
+  return parseCVContent(content);
+}
+
+function parseCVContent(content) {
   const lines = content.split('\n');
 
   const result = {
@@ -157,4 +161,4 @@ function parseCV() {
   return result;
 }
 
-module.exports = { parseCV };
+module.exports = { parseCV, parseCVContent };

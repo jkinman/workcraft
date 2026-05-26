@@ -16,6 +16,7 @@
  */
 
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import yaml from 'js-yaml';
 const parseYaml = yaml.load;
 
@@ -35,13 +36,14 @@ async function getScrapers() {
 
 // ── Config ──────────────────────────────────────────────────────────
 
-const PORTALS_PATH = 'portals.yml';
-const SCAN_HISTORY_PATH = 'data/scan-history.tsv';
-const PIPELINE_PATH = 'data/pipeline.md';
-const APPLICATIONS_PATH = 'data/applications.md';
+const DATA_ROOT = process.env.CAREER_OPS_DATA_ROOT || '.';
+const PORTALS_PATH = join(DATA_ROOT, 'portals.yml');
+const SCAN_HISTORY_PATH = join(DATA_ROOT, 'data', 'scan-history.tsv');
+const PIPELINE_PATH = join(DATA_ROOT, 'data', 'pipeline.md');
+const APPLICATIONS_PATH = join(DATA_ROOT, 'data', 'applications.md');
 
 // Ensure required directories exist (fresh setup)
-mkdirSync('data', { recursive: true });
+mkdirSync(join(DATA_ROOT, 'data'), { recursive: true });
 
 const CONCURRENCY = 10;
 const FETCH_TIMEOUT_MS = 10_000;

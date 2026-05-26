@@ -24,6 +24,8 @@ modes/_profile.md
 
 # Generated
 .resolved-prompt-*
+.next/
+dashboard-web/.next/
 node_modules/
 bun.lock
 
