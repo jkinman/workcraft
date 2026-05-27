@@ -18,6 +18,7 @@
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import yaml from 'js-yaml';
+import { resolveCareerOpsPaths } from './lib/path-roots.mjs';
 const parseYaml = yaml.load;
 
 // Deep-dive scrapers (optional — lazy-loaded so scan.mjs works without them)
@@ -36,11 +37,13 @@ async function getScrapers() {
 
 // ── Config ──────────────────────────────────────────────────────────
 
-const DATA_ROOT = process.env.CAREER_OPS_DATA_ROOT || '.';
-const PORTALS_PATH = join(DATA_ROOT, 'portals.yml');
-const SCAN_HISTORY_PATH = join(DATA_ROOT, 'data', 'scan-history.tsv');
-const PIPELINE_PATH = join(DATA_ROOT, 'data', 'pipeline.md');
-const APPLICATIONS_PATH = join(DATA_ROOT, 'data', 'applications.md');
+const {
+  dataRoot: DATA_ROOT,
+  portalsPath: PORTALS_PATH,
+  scanHistoryPath: SCAN_HISTORY_PATH,
+  pipelinePath: PIPELINE_PATH,
+  applicationsPath: APPLICATIONS_PATH
+} = resolveCareerOpsPaths();
 
 // Ensure required directories exist (fresh setup)
 mkdirSync(join(DATA_ROOT, 'data'), { recursive: true });

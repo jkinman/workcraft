@@ -15,20 +15,16 @@
  */
 
 import { readFileSync, readdirSync, existsSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
+import { resolveCareerOpsPaths } from './lib/path-roots.mjs';
 
-const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
-const DATA_ROOT = process.env.CAREER_OPS_DATA_ROOT || CAREER_OPS;
-// Support both layouts: data/applications.md (boilerplate) and applications.md (original)
-const APPS_FILE = existsSync(join(DATA_ROOT, 'data/applications.md'))
-  ? join(DATA_ROOT, 'data/applications.md')
-  : join(DATA_ROOT, 'applications.md');
-const ADDITIONS_DIR = join(DATA_ROOT, 'batch/tracker-additions');
-const REPORTS_DIR = join(DATA_ROOT, 'reports');
-const STATES_FILE = existsSync(join(CAREER_OPS, 'templates/states.yml'))
-  ? join(CAREER_OPS, 'templates/states.yml')
-  : join(CAREER_OPS, 'states.yml');
+const {
+  dataRoot: DATA_ROOT,
+  applicationsPath: APPS_FILE,
+  trackerAdditionsDir: ADDITIONS_DIR,
+  reportsDir: REPORTS_DIR,
+  statesPath: STATES_FILE
+} = resolveCareerOpsPaths();
 
 // Ensure required directories exist (fresh setup)
 mkdirSync(join(DATA_ROOT, 'data'), { recursive: true });
@@ -130,7 +126,7 @@ let brokenReports = 0;
 for (const e of entries) {
   const match = e.report.match(/\]\(([^)]+)\)/);
   if (!match) continue;
-  const reportPath = join(CAREER_OPS, match[1]);
+  const reportPath = join(DATA_ROOT, match[1]);
   if (!existsSync(reportPath)) {
     error(`#${e.num}: Report not found: ${match[1]}`);
     brokenReports++;

@@ -15,17 +15,16 @@
  */
 
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, renameSync, existsSync } from 'fs';
-import { join, basename, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join, basename } from 'path';
 import { execFileSync } from 'child_process';
+import { resolveCareerOpsPaths } from './lib/path-roots.mjs';
 
-const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
-const DATA_ROOT = process.env.CAREER_OPS_DATA_ROOT || CAREER_OPS;
-// Support both layouts: data/applications.md (boilerplate) and applications.md (original)
-const APPS_FILE = existsSync(join(DATA_ROOT, 'data/applications.md'))
-  ? join(DATA_ROOT, 'data/applications.md')
-  : join(DATA_ROOT, 'applications.md');
-const ADDITIONS_DIR = join(DATA_ROOT, 'batch/tracker-additions');
+const {
+  systemRoot: CAREER_OPS,
+  dataRoot: DATA_ROOT,
+  applicationsPath: APPS_FILE,
+  trackerAdditionsDir: ADDITIONS_DIR
+} = resolveCareerOpsPaths();
 const MERGED_DIR = join(ADDITIONS_DIR, 'merged');
 const DRY_RUN = process.argv.includes('--dry-run');
 const VERIFY = process.argv.includes('--verify');

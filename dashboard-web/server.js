@@ -1,4 +1,6 @@
-// server.js - Main entry point
+// Legacy Express dashboard entry point.
+// The canonical hosted UI is the Next app under app/ and must resolve tenant
+// data through lib/tenant-services.js. Keep this file only for legacy:start.
 const express = require('express');
 const CONFIG = require('./config');
 const { parsePipeline, addToPipeline } = require('./pipeline');
