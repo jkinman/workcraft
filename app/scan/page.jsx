@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { headers } from 'next/headers';
 import { Header } from '../../ui/Header';
 import { ScanControls } from '../../ui/ScanControls';
+import { SetupPanel } from '../../ui/SetupPanel';
 import tenantServices from '../../lib/tenant-services';
 
 const { getTenantDashboardModel, getTenantServices } = tenantServices;
@@ -11,13 +12,16 @@ export default async function ScanPage() {
   const { tenant, model } = getTenantDashboardModel(requestContext);
   const { services } = getTenantServices(requestContext);
   const stats = services.scan.getStats();
+  const setupStatus = services.setup.getStatus();
 
   return (
     <>
       <Header stats={model.stats} activeView="scan" tenantId={tenant.tenantId} />
       <main className="container">
+        <SetupPanel status={setupStatus} title="Scanner setup" />
+
         <div className="section-title">Scan Controls</div>
-        <ScanControls />
+        <ScanControls disabled={!setupStatus.ready.scan} />
 
         <div className="section-title">System Metrics</div>
         <section className="stat-grid">

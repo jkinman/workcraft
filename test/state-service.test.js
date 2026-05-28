@@ -26,6 +26,18 @@ describe('state service', () => {
     expect(result.history).toHaveLength(2);
   });
 
+  it('loads canonical workflow states from templates/states.yml', () => {
+    expect(stateManager.STATE_ORDER).toContain('responded');
+    expect(stateManager.STATE_META.responded.label).toBe('RESPONDED');
+    expect(stateManager.getNextStates('applied')).toContain('responded');
+  });
+
+  it('normalizes legacy web workflow states when reading old frontmatter', () => {
+    const frontmatter = buildFrontmatter('interviewing', [{ state: 'interviewing', date: '2026-05-25' }]);
+
+    expect(parseFrontmatter(`${frontmatter}# Evaluation: Acme - Engineer`).state).toBe('interview');
+  });
+
   it('rejects invalid transitions', () => {
     const content = `${buildFrontmatter('evaluated', [])}# Evaluation: Acme - Engineer`;
     const result = transitionReportContent(content, 'offer', '2026-05-25');
