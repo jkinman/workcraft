@@ -2,11 +2,16 @@
 
 import { useState } from 'react';
 
-export function ScanControls() {
+export function ScanControls({ disabled = false }) {
   const [status, setStatus] = useState(null);
   const [busyMode, setBusyMode] = useState(null);
 
   async function runScan(mode) {
+    if (disabled) {
+      setStatus({ type: 'error', message: 'Scanner setup is incomplete. Initialize defaults first.' });
+      return;
+    }
+
     setBusyMode(mode);
     setStatus({ type: 'info', message: `Running ${mode} scan...` });
 
@@ -36,13 +41,13 @@ export function ScanControls() {
   return (
     <div className="card">
       <div className="nav-buttons">
-        <button className="btn btn-success" disabled={!!busyMode} onClick={() => runScan('full')} type="button">
+        <button className="btn btn-success" disabled={disabled || !!busyMode} onClick={() => runScan('full')} type="button">
           RUN_FULL_SCAN
         </button>
-        <button className="btn" disabled={!!busyMode} onClick={() => runScan('dry-run')} type="button">
+        <button className="btn" disabled={disabled || !!busyMode} onClick={() => runScan('dry-run')} type="button">
           DRY_RUN
         </button>
-        <button className="btn btn-warning" disabled={!!busyMode} onClick={() => runScan('deep-dive')} type="button">
+        <button className="btn btn-warning" disabled={disabled || !!busyMode} onClick={() => runScan('deep-dive')} type="button">
           DEEP_DIVE
         </button>
       </div>

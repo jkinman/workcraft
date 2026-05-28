@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import tenantContext from '../lib/tenant-context';
+import clerkAdapter from '../lib/auth/clerk-adapter';
 
 const { getTenantContext, normalizeTenantId } = tenantContext;
+const { clerkAuthToTenantRequest } = clerkAdapter;
 
 describe('tenant context', () => {
   let originalEnv;
@@ -10,10 +12,12 @@ describe('tenant context', () => {
     originalEnv = {
       CAREER_OPS_ALLOW_DEV_TENANT_HEADER: process.env.CAREER_OPS_ALLOW_DEV_TENANT_HEADER,
       CAREER_OPS_TENANT_ID: process.env.CAREER_OPS_TENANT_ID,
+      CAREER_OPS_TENANT_MODE: process.env.CAREER_OPS_TENANT_MODE,
       NODE_ENV: process.env.NODE_ENV
     };
     delete process.env.CAREER_OPS_ALLOW_DEV_TENANT_HEADER;
     delete process.env.CAREER_OPS_TENANT_ID;
+    delete process.env.CAREER_OPS_TENANT_MODE;
     process.env.NODE_ENV = 'test';
   });
 
@@ -34,6 +38,7 @@ describe('tenant context', () => {
 
   it('accepts lowercase hosted tenant ids', () => {
     expect(normalizeTenantId('acme-team')).toBe('acme-team');
+    expect(normalizeTenantId('user_123')).toBe('user_123');
   });
 
   it('rejects unsafe tenant ids', () => {
@@ -74,5 +79,19 @@ describe('tenant context', () => {
 
     expect(context.tenantId).toBe('env-tenant');
     expect(context.tenantSource).toBe('env');
+  });
+
+  it('maps Clerk auth user ids into trusted tenant requests', () => {
+    const context = getTenantContext(clerkAuthToTenantRequest({ userId: 'user_123' }));
+
+    expect(context.tenantId).toBe('user_123');
+    expect(context.tenantSource).toBe('auth');
+  });
+
+  it('fails closed in hosted production without auth', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.CAREER_OPS_TENANT_MODE = 'hosted';
+
+    expect(() => getTenantContext()).toThrow('Authentication required for hosted tenant resolution');
   });
 });

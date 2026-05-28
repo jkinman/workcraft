@@ -27,8 +27,9 @@ const CANONICAL_REPO = 'https://github.com/santifer/career-ops.git';
 const RAW_VERSION_URL = 'https://raw.githubusercontent.com/santifer/career-ops/main/VERSION';
 const RELEASES_API = 'https://api.github.com/repos/santifer/career-ops/releases/latest';
 
-// System layer paths — ONLY these files get updated
-const SYSTEM_PATHS = [
+// System layer paths — ONLY these files get updated.
+// Fork layer paths are filtered out even when a system directory is updated.
+export const SYSTEM_PATHS = [
   'modes/_shared.md',
   'modes/_profile.template.md',
   'modes/oferta.md',
@@ -71,8 +72,15 @@ const SYSTEM_PATHS = [
   'package.json',
 ];
 
+export const FORK_PATHS = [
+  'dashboard-web/',
+  'lib/path-roots.mjs',
+  'docs/HOSTED_VERCEL_READINESS.md',
+  'docs/FORK_LAYER.md',
+];
+
 // User layer paths — NEVER touch these (safety check)
-const USER_PATHS = [
+export const USER_PATHS = [
   'cv.md',
   'config/profile.yml',
   'modes/_profile.md',
@@ -102,6 +110,43 @@ function compareVersions(a, b) {
 
 function git(...args) {
   return execFileSync('git', args, { cwd: ROOT, encoding: 'utf-8', timeout: 30000 }).trim();
+}
+
+function pathMatches(candidate, protectedPath) {
+  return protectedPath.endsWith('/')
+    ? candidate.startsWith(protectedPath)
+    : candidate === protectedPath;
+}
+
+export function isForkPath(path) {
+  return FORK_PATHS.some(forkPath => pathMatches(path, forkPath));
+}
+
+function remoteFilesForPath(ref, path) {
+  if (!path.endsWith('/')) return [path];
+  try {
+    return git('ls-tree', '-r', '--name-only', ref, '--', path)
+      .split('\n')
+      .map(file => file.trim())
+      .filter(Boolean);
+  } catch {
+    return [path];
+  }
+}
+
+export function filterForkPaths(paths) {
+  return paths.filter(path => !isForkPath(path));
+}
+
+function checkoutPathFromRef(ref, path) {
+  const paths = filterForkPaths(remoteFilesForPath(ref, path));
+  if (paths.length === 0) return [];
+  git('checkout', ref, '--', ...paths);
+  return paths;
+}
+
+function checkoutSystemPath(path) {
+  return checkoutPathFromRef('FETCH_HEAD', path);
 }
 
 function gitStatusEntries() {
@@ -209,8 +254,7 @@ async function apply() {
     const updated = [];
     for (const path of SYSTEM_PATHS) {
       try {
-        git('checkout', 'FETCH_HEAD', '--', path);
-        updated.push(path);
+        updated.push(...checkoutSystemPath(path));
       } catch {
         // File may not exist in remote (new additions), skip
       }
@@ -222,9 +266,9 @@ async function apply() {
       for (const entry of gitStatusEntries()) {
         const file = entry.path;
         if (initialStatusPaths.has(file)) continue;
-        for (const userPath of USER_PATHS) {
-          if (file.startsWith(userPath)) {
-            console.error(`SAFETY VIOLATION: User file was modified: ${file}`);
+        for (const protectedPath of [...USER_PATHS, ...FORK_PATHS]) {
+          if (pathMatches(file, protectedPath)) {
+            console.error(`SAFETY VIOLATION: Protected file was modified: ${file}`);
             userFileTouched = true;
           }
         }
@@ -234,7 +278,7 @@ async function apply() {
     }
 
     if (userFileTouched) {
-      console.error('Aborting: user files were touched. Rolling back...');
+    console.error('Aborting: protected files were touched. Rolling back...');
       revertPaths(updated);
       process.exit(1);
     }
@@ -288,15 +332,16 @@ function rollback() {
     console.log(`Rolling back to: ${latest}`);
 
     // Checkout system files from backup branch
+    const restored = [];
     for (const path of SYSTEM_PATHS) {
       try {
-        git('checkout', latest, '--', path);
+        restored.push(...checkoutPathFromRef(latest, path));
       } catch {
         // File may not have existed in backup
       }
     }
 
-    addPaths(SYSTEM_PATHS);
+    addPaths(restored);
     git('commit', '-m', `chore: rollback system files from ${latest}`);
 
     console.log(`Rollback complete. System files restored from ${latest}.`);
@@ -316,14 +361,16 @@ function dismiss() {
 
 // ── MAIN ────────────────────────────────────────────────────────
 
-const cmd = process.argv[2] || 'check';
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const cmd = process.argv[2] || 'check';
 
-switch (cmd) {
-  case 'check': await check(); break;
-  case 'apply': await apply(); break;
-  case 'rollback': rollback(); break;
-  case 'dismiss': dismiss(); break;
-  default:
-    console.log('Usage: node update-system.mjs [check|apply|rollback|dismiss]');
-    process.exit(1);
+  switch (cmd) {
+    case 'check': await check(); break;
+    case 'apply': await apply(); break;
+    case 'rollback': rollback(); break;
+    case 'dismiss': dismiss(); break;
+    default:
+      console.log('Usage: node update-system.mjs [check|apply|rollback|dismiss]');
+      process.exit(1);
+  }
 }

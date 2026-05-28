@@ -1,5 +1,5 @@
 const DEFAULT_TENANT_ID = 'local-dev';
-const TENANT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
+const TENANT_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 
 function normalizeTenantId(value) {
   const tenantId = (value || DEFAULT_TENANT_ID).toLowerCase();
@@ -10,9 +10,10 @@ function normalizeTenantId(value) {
 }
 
 function getTenantContext(request) {
+  const mode = process.env.CAREER_OPS_TENANT_MODE || 'local-dev';
   const authTenant = getAuthTenantId(request);
   if (authTenant) {
-    return buildTenantContext(authTenant, 'auth');
+    return buildTenantContext(authTenant, 'auth', mode);
   }
 
   const headerTenant = getHeader(request, 'x-tenant-id');
@@ -21,21 +22,25 @@ function getTenantContext(request) {
     if (process.env.NODE_ENV === 'production' && !allowDevHeader) {
       throw new Error('x-tenant-id is not trusted in production');
     }
-    return buildTenantContext(headerTenant, 'dev-header');
+    return buildTenantContext(headerTenant, 'dev-header', mode);
+  }
+
+  if (mode === 'hosted' && process.env.NODE_ENV === 'production') {
+    throw new Error('Authentication required for hosted tenant resolution');
   }
 
   if (process.env.CAREER_OPS_TENANT_ID) {
-    return buildTenantContext(process.env.CAREER_OPS_TENANT_ID, 'env');
+    return buildTenantContext(process.env.CAREER_OPS_TENANT_ID, 'env', mode);
   }
 
-  return buildTenantContext(DEFAULT_TENANT_ID, 'default');
+  return buildTenantContext(DEFAULT_TENANT_ID, 'default', mode);
 }
 
-function buildTenantContext(tenantId, tenantSource) {
+function buildTenantContext(tenantId, tenantSource, mode = process.env.CAREER_OPS_TENANT_MODE || 'local-dev') {
   return {
     tenantId: normalizeTenantId(tenantId),
     tenantSource,
-    mode: process.env.CAREER_OPS_TENANT_MODE || 'local-dev'
+    mode
   };
 }
 

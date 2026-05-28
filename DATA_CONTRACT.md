@@ -1,6 +1,6 @@
 # Data Contract
 
-This document defines which files belong to the **system** (auto-updatable) and which belong to the **user** (never touched by updates).
+This document defines which files belong to the **system** (auto-updatable), which belong to the **user** (never touched by updates), and which belong to this fork's hosted web layer.
 
 ## User Layer (NEVER auto-updated)
 
@@ -63,3 +63,16 @@ These files contain system logic, scripts, templates, and instructions that impr
 **If a file is in the User Layer, no update process may read, modify, or delete it.**
 
 **If a file is in the System Layer, it can be safely replaced with the latest version from the upstream repo.**
+
+## Fork Layer (NEVER auto-updated)
+
+These files are owned by this fork. They support the Next web interface, hosted/Vercel migration, and seams that keep the fork updateable from upstream.
+
+| File | Purpose |
+|------|---------|
+| `dashboard-web/*` | Next web interface and web-specific tests |
+| `lib/path-roots.mjs` | Shared system-root/data-root resolver used by fork-safe script adapters |
+| `docs/HOSTED_VERCEL_READINESS.md` | Hosted architecture and Vercel migration plan |
+| `docs/FORK_LAYER.md` | Fork update-safety notes |
+
+**If a file is in the Fork Layer, the upstream updater must not replace it automatically.** Update conflicts with upstream should be reviewed manually.

@@ -180,4 +180,44 @@ state_history:
     expect(response.status).toBe(404);
     expect(json.success).toBe(false);
   });
+
+  it('reports scanner setup requirements before running scan', async () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'career-ops-api-'));
+    const { POST } = await importRoute('../app/api/scan/route.js', rootPath);
+
+    const response = await POST(new Request('http://localhost/api/scan?dryRun=true', {
+      method: 'POST',
+      headers: { 'x-tenant-id': 'tenant-a' }
+    }));
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json.success).toBe(false);
+    expect(json.code).toBe('setup_required');
+    expect(json.missing).toEqual(['portals', 'pipeline']);
+  });
+
+  it('initializes defaults into only the requested tenant root', async () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'career-ops-api-'));
+    mkdirSync(join(rootPath, 'templates'), { recursive: true });
+    mkdirSync(join(rootPath, 'config'), { recursive: true });
+    writeFileSync(join(rootPath, 'templates', 'portals.example.yml'), 'tracked_companies: []\n');
+    writeFileSync(join(rootPath, 'config', 'profile.example.yml'), 'candidate:\n  full_name: Default User\n');
+    const { POST, GET } = await importRoute('../app/api/setup/route.js', rootPath);
+
+    const response = await POST(request('http://localhost/api/setup', { target: 'all' }, 'tenant-a'));
+    const json = await response.json();
+    const tenantBStatus = await GET(new Request('http://localhost/api/setup', {
+      headers: { 'x-tenant-id': 'tenant-b' }
+    })).then(res => res.json());
+
+    expect(response.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.initialized).toEqual(['portals', 'profile', 'pipeline']);
+    expect(readFileSync(join(rootPath, 'tenants', 'tenant-a', 'portals.yml'), 'utf8')).toContain('tracked_companies');
+    expect(readFileSync(join(rootPath, 'tenants', 'tenant-a', 'config', 'profile.yml'), 'utf8')).toContain('Default User');
+    expect(readFileSync(join(rootPath, 'tenants', 'tenant-a', 'data', 'pipeline.md'), 'utf8')).toContain('## Pending');
+    expect(tenantBStatus.status.files.portals).toBe(false);
+    expect(existsSync(join(rootPath, 'tenants', 'tenant-b', 'portals.yml'))).toBe(false);
+  });
 });

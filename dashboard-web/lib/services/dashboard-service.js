@@ -1,10 +1,11 @@
-const { createRepository } = require('../repositories/local-career-ops-repository');
+const { createRepository } = require('../repositories/repository-factory');
 const { createDataClient } = require('../data/career-ops-data-client');
 const { createPipelineService } = require('./pipeline-service');
 const { createReportService } = require('./report-service');
 const { createScanService } = require('./scan-service');
+const { createSetupService } = require('./setup-service');
 const { createStateService } = require('./state-service');
-const { createTenantCliRunner } = require('./tenant-cli-runner');
+const { createWorkloadRunner } = require('./workload-runner');
 
 function createCareerOpsServices(tenantContext) {
   const repository = createRepository(tenantContext);
@@ -15,8 +16,9 @@ function createCareerOpsServices(tenantContext) {
     repository,
     pipeline: createPipelineService(dataClient),
     reports: createReportService(dataClient),
-    runner: createTenantCliRunner(dataClient),
+    runner: createWorkloadRunner(dataClient, tenantContext),
     scan: createScanService(dataClient),
+    setup: createSetupService(dataClient),
     state: createStateService(dataClient)
   };
 }

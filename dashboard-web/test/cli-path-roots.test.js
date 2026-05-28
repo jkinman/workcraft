@@ -4,6 +4,14 @@ import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 import { resolveCareerOpsPaths, resolveDataRoot } from '../../lib/path-roots.mjs';
 
+const tenantAwareScripts = [
+  '../../scan.mjs',
+  '../../merge-tracker.mjs',
+  '../../dedup-tracker.mjs',
+  '../../normalize-statuses.mjs',
+  '../../verify-pipeline.mjs'
+];
+
 describe('career-ops CLI path roots', () => {
   it('keeps system root separate from tenant data root', () => {
     const dataRoot = mkdtempSync(join(tmpdir(), 'career-ops-data-root-'));
@@ -24,5 +32,12 @@ describe('career-ops CLI path roots', () => {
 
     expect(resolveDataRoot({})).toBe(paths.systemRoot);
     expect(paths.dataRoot).toBe(paths.systemRoot);
+  });
+
+  it('keeps tenant-aware root scripts on the shared path-root seam', async () => {
+    for (const script of tenantAwareScripts) {
+      const source = await import('fs/promises').then(fs => fs.readFile(new URL(script, import.meta.url), 'utf8'));
+      expect(source).toContain('resolveCareerOpsPaths');
+    }
   });
 });

@@ -1,49 +1,9 @@
 // state-manager.js - Job application workflow state machine
-// States: discovered → researching → evaluated → applied → interviewing → offer → closed
+// State ids and labels are loaded from templates/states.yml.
 const fs = require('fs');
 const path = require('path');
 const CONFIG = require('./config');
-
-const STATES = {
-  DISCOVERED: 'discovered',
-  RESEARCHING: 'researching',
-  EVALUATED: 'evaluated',
-  APPLIED: 'applied',
-  INTERVIEWING: 'interviewing',
-  OFFER: 'offer',
-  CLOSED: 'closed'
-};
-
-const STATE_ORDER = [
-  STATES.DISCOVERED,
-  STATES.RESEARCHING,
-  STATES.EVALUATED,
-  STATES.APPLIED,
-  STATES.INTERVIEWING,
-  STATES.OFFER,
-  STATES.CLOSED
-];
-
-const STATE_META = {
-  [STATES.DISCOVERED]: { label: 'DISCOVERED', badgeClass: 'status-pending', color: 'var(--text-dim)' },
-  [STATES.RESEARCHING]: { label: 'RESEARCHING', badgeClass: 'status-reviewing', color: 'var(--warning)' },
-  [STATES.EVALUATED]: { label: 'EVALUATED', badgeClass: 'status-evaluated', color: 'var(--text-muted)' },
-  [STATES.APPLIED]: { label: 'APPLIED', badgeClass: 'status-applied', color: 'var(--success)' },
-  [STATES.INTERVIEWING]: { label: 'INTERVIEWING', badgeClass: 'status-interview', color: 'var(--primary)' },
-  [STATES.OFFER]: { label: 'OFFER', badgeClass: 'status-offer', color: 'var(--success-strong)' },
-  [STATES.CLOSED]: { label: 'CLOSED', badgeClass: 'status-rejected', color: 'var(--error)' }
-};
-
-// Valid transitions: from -> [to, to, ...]
-const VALID_TRANSITIONS = {
-  [STATES.DISCOVERED]: [STATES.RESEARCHING, STATES.EVALUATED, STATES.CLOSED],
-  [STATES.RESEARCHING]: [STATES.EVALUATED, STATES.CLOSED],
-  [STATES.EVALUATED]: [STATES.APPLIED, STATES.CLOSED],
-  [STATES.APPLIED]: [STATES.INTERVIEWING, STATES.CLOSED],
-  [STATES.INTERVIEWING]: [STATES.OFFER, STATES.CLOSED],
-  [STATES.OFFER]: [STATES.CLOSED],
-  [STATES.CLOSED]: [STATES.DISCOVERED] // Can reopen
-};
+const { STATES, STATE_ORDER, STATE_META, VALID_TRANSITIONS, normalizeWorkflowState } = require('./lib/workflow-states');
 
 function parseFrontmatter(content) {
   const fm = { state: STATES.EVALUATED, state_history: [] };
@@ -52,7 +12,7 @@ function parseFrontmatter(content) {
 
   const yaml = match[1];
   const stateMatch = yaml.match(/^state:\s*(\S+)/m);
-  if (stateMatch) fm.state = stateMatch[1].trim();
+  if (stateMatch) fm.state = normalizeWorkflowState(stateMatch[1].trim());
 
   const historyMatch = yaml.match(/^state_history:\s*\n((?:  - .+\n?)+)/m);
   if (historyMatch) {
@@ -113,7 +73,7 @@ function getReportPath(slug) {
 
 function getState(slug) {
   const reportPath = getReportPath(slug);
-  if (!reportPath) return { state: STATES.DISCOVERED, history: [] };
+  if (!reportPath) return { state: STATES.EVALUATED, history: [] };
 
   const content = fs.readFileSync(reportPath, 'utf8');
   const fm = parseFrontmatter(content);
@@ -173,7 +133,7 @@ function getNextStates(currentState) {
 }
 
 function getStateMeta(state) {
-  return STATE_META[state] || STATE_META[STATES.DISCOVERED];
+  return STATE_META[state] || STATE_META[STATES.EVALUATED];
 }
 
 function getAllStatesWithCounts() {
