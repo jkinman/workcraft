@@ -199,9 +199,10 @@ function createSettingsService(dataClient) {
     };
   }
 
-  function listAssets() {
+  async function listAssets() {
+    const files = await dataClient.listGeneratedFiles();
     return {
-      files: dataClient.listGeneratedFiles().map(file => ({
+      files: files.map(file => ({
         filename: file.filename,
         size: file.stat?.size ?? null,
         modified: file.stat?.mtime ?? null,

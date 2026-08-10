@@ -38,7 +38,7 @@ class CareerOpsDataClient {
   }
 
   readArticleDigest() {
-    return this.readOptionalText(path.join(this.repository.tenantRoot(), 'article-digest.md'));
+    return this.readOptionalText(this.repository.articleDigestPath());
   }
 
   readAgentProfile() {
@@ -50,7 +50,7 @@ class CareerOpsDataClient {
   }
 
   readStoryBank() {
-    return this.readOptionalText(path.join(this.repository.tenantRoot(), 'interview-prep', 'story-bank.md'));
+    return this.readOptionalText(this.repository.storyBankPath());
   }
 
   readInterviewPrep(filename) {
@@ -71,8 +71,10 @@ class CareerOpsDataClient {
   }
 
   listJobDescriptions() {
-    const dir = path.join(this.repository.tenantRoot(), 'jds');
-    return this.repository.listFilesInDirectory(dir, file => file.endsWith('.md') || file.endsWith('.txt'));
+    return this.repository.listFilesInDirectory(
+      this.repository.jdsDir(),
+      file => file.endsWith('.md') || file.endsWith('.txt')
+    );
   }
 
   readPipeline() {
@@ -125,16 +127,21 @@ class CareerOpsDataClient {
     return this.repository.writeText(key, content);
   }
 
-  readOutputFile(filename) {
+  outputFileKey(filename) {
     const safeName = path.basename(filename);
-    const filePath = path.join(this.repository.outputDir(), safeName);
-    return this.repository.exists(filePath) ? this.repository.readBinary(filePath) : null;
+    return `${this.repository.outputDir()}/${safeName}`;
+  }
+
+  async readOutputFile(filename) {
+    const key = this.outputFileKey(filename);
+    if (this.repository.storageAdapter === 'local' && !this.repository.exists(key)) {
+      return null;
+    }
+    return this.repository.readBinary(key);
   }
 
   async writeOutputFile(filename, content) {
-    const safeName = path.basename(filename);
-    const key = `${this.repository.outputDir()}/${safeName}`;
-    return this.repository.writeBinary(key, content);
+    return this.repository.writeBinary(this.outputFileKey(filename), content);
   }
 
   async putGeneratedFile({ filename, content, type = 'unknown', relatedEntity = null }) {
@@ -143,30 +150,32 @@ class CareerOpsDataClient {
       filename: path.basename(filename),
       type,
       relatedEntity,
-      storage: this.repository.constructor?.name?.includes('Supabase') ? 'supabase' : 'local',
+      storage: this.repository.storageAdapter,
       path: this.resolveOutputPath(filename)
     };
   }
 
-  getGeneratedFile(filename) {
-    const content = this.readOutputFile(filename);
+  async getGeneratedFile(filename) {
+    const content = await this.readOutputFile(filename);
     if (!content) return null;
     return {
       filename: path.basename(filename),
       content,
-      storage: 'local',
+      storage: this.repository.storageAdapter,
       path: this.resolveOutputPath(filename)
     };
   }
 
   resolveOutputPath(filename) {
-    return path.join(this.repository.outputDir(), path.basename(filename));
+    const safeName = path.basename(filename);
+    if (this.repository.storageAdapter === 'supabase') {
+      return this.outputFileKey(safeName);
+    }
+    return path.join(this.repository.outputDir(), safeName);
   }
 
-  listGeneratedFiles() {
-    return this.repository
-      .listFilesInDirectory(this.repository.outputDir(), file => file !== '.gitkeep')
-      .map(file => ({ filename: file.filename, stat: file.stat }));
+  async listGeneratedFiles() {
+    return this.repository.listOutputFiles();
   }
 
   ensureOutputDir() {

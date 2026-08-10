@@ -19,7 +19,7 @@ export default async function ManagePage() {
   const { tenant, model } = await getTenantDashboardModel(requestContext);
   const { services } = await getTenantServices(requestContext);
   const setupStatus = services.setup.getStatus();
-  const assets = services.settings.listAssets();
+  const assets = await services.settings.listAssets();
 
   return (
     <>

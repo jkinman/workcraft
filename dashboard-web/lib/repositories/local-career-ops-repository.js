@@ -7,6 +7,7 @@ class LocalCareerOpsRepository {
   constructor({ tenantId = DEFAULT_TENANT_ID, rootPath = CONFIG.CAREER_OPS_PATH } = {}) {
     this.tenantId = normalizeTenantId(tenantId);
     this.rootPath = rootPath;
+    this.storageAdapter = 'local';
   }
 
   tenantRoot() {
@@ -48,6 +49,18 @@ class LocalCareerOpsRepository {
     return path.join(this.tenantRoot(), 'cv.md');
   }
 
+  articleDigestPath() {
+    return path.join(this.tenantRoot(), 'article-digest.md');
+  }
+
+  storyBankPath() {
+    return path.join(this.tenantRoot(), 'interview-prep', 'story-bank.md');
+  }
+
+  jdsDir() {
+    return path.join(this.tenantRoot(), 'jds');
+  }
+
   exists(filePath) {
     return fs.existsSync(filePath);
   }
@@ -87,6 +100,10 @@ class LocalCareerOpsRepository {
         path: path.join(dir, file),
         stat: fs.statSync(path.join(dir, file))
       }));
+  }
+
+  async listOutputFiles() {
+    return this.listFilesInDirectory(this.outputDir(), file => file !== '.gitkeep');
   }
 }
 

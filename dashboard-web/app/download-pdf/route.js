@@ -17,7 +17,7 @@ export async function GET(request) {
     return jsonError(error.message, 400);
   }
 
-  const body = services.dataClient.readOutputFile(filename);
+  const body = await services.dataClient.readOutputFile(filename);
   if (!body) return jsonNotFound('File not found');
 
   return new Response(body, {

@@ -8,19 +8,14 @@ const { createSetupService } = require('./setup-service');
 const { createStateService } = require('./state-service');
 const { createWorkloadRunner } = require('./workload-runner');
 const { createOnboardingService } = require('./onboarding-service');
-const { createCareerOpsObjectStore, createCareerOpsStore } = require('../stores/store-factory');
 
 async function createCareerOpsServices(tenantContext) {
   const repository = await createRepository(tenantContext);
   const dataClient = createDataClient(repository);
-  const store = createCareerOpsStore({ dataClient, tenantContext });
-  const objectStore = createCareerOpsObjectStore({ dataClient, tenantContext });
 
   const services = {
     dataClient,
-    objectStore,
     repository,
-    store,
     pipeline: createPipelineService(dataClient),
     reports: createReportService(dataClient),
     runner: createWorkloadRunner(dataClient, tenantContext),

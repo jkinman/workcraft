@@ -78,7 +78,7 @@ describe('settings service', () => {
     const { service, dataClient } = makeService();
     await dataClient.writeOutputFile('cv-jane-acme.pdf', Buffer.from('pdf'));
 
-    const assets = service.listAssets();
+    const assets = await service.listAssets();
 
     expect(assets.files.map(file => file.filename)).toEqual(['cv-jane-acme.pdf']);
     expect(assets.files[0].downloadUrl).toBe('/download-pdf?file=cv-jane-acme.pdf');

@@ -129,7 +129,7 @@ async function htmlToPDFBuffer(html, format) {
 async function writePDFOutput(html, filename, format, dataClient) {
   if (dataClient) {
     const buffer = await htmlToPDFBuffer(html, format);
-    dataClient.writeOutputFile(filename, buffer);
+    await dataClient.writeOutputFile(filename, buffer);
     return dataClient.resolveOutputPath(filename);
   }
 

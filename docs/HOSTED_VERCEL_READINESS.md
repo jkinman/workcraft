@@ -97,9 +97,9 @@ The current user layer should move to Postgres and object storage while system f
 
 | Asset | Key pattern | Metadata table |
 |-------|-------------|----------------|
-| Generated PDFs | `users/{clerkUserId}/output/{fileId}.pdf` | `generated_files` |
-| Uploaded/source CV files | `users/{clerkUserId}/documents/cv/{fileId}` | `documents` or `generated_files` |
-| Optional generated HTML | `users/{clerkUserId}/tmp/{jobId}.html` | `background_jobs`, short TTL |
+| Generated PDFs | `{tenantId}/output/{filename}.pdf` | `generated_files` |
+| Uploaded/source CV files | `{tenantId}/documents/cv/{fileId}` | `documents` or `generated_files` |
+| Optional generated HTML | `{tenantId}/tmp/{jobId}.html` | `background_jobs`, short TTL |
 
 ### Repo/System Files
 
@@ -173,19 +173,19 @@ Hosted target:
 ```mermaid
 flowchart TD
   App["Next route or page"] --> TenantServices["tenant-services"]
-  TenantServices --> HostedRepository["HostedCareerOpsRepository"]
-  HostedRepository --> Postgres["Postgres"]
-  HostedRepository --> ObjectStorage["Object Storage"]
+  TenantServices --> SupabaseRepository["SupabaseRepository"]
+  SupabaseRepository --> Postgres["Postgres"]
+  SupabaseRepository --> ObjectStorage["Object Storage"]
 ```
 
 Migration steps:
 
 1. Define a repository contract around the operations actually used by `CareerOpsDataClient`.
 2. Keep `LocalCareerOpsRepository` as the development implementation.
-3. Add `HostedCareerOpsRepository` for Postgres/object storage.
+3. Add `SupabaseRepository` for Postgres/object storage.
 4. Select repository by environment mode:
    - `CAREER_OPS_TENANT_MODE=local-dev`: local filesystem.
-   - `CAREER_OPS_TENANT_MODE=hosted`: Clerk user plus hosted persistence.
+   - `CAREER_OPS_TENANT_MODE=hosted`: Clerk user plus `SupabaseRepository`.
 5. Add contract tests that run the same data-client behaviors against both implementations where possible.
 
 Early hosted implementation should prioritize:
@@ -232,7 +232,6 @@ Before production deploy:
 - Add hosted environment documentation:
   - `CLERK_SECRET_KEY`.
   - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`.
-  - `CAREER_OPS_STORAGE_ADAPTER=supabase`.
   - `SUPABASE_URL`.
   - `SUPABASE_SERVICE_ROLE_KEY`.
   - `SUPABASE_STORAGE_BUCKET` (defaults to `career-ops-files`).

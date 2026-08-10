@@ -1,4 +1,5 @@
-const { createSupabaseServerClient } = require('../stores/supabase-client');
+const { createSupabaseServerClient } = require('./supabase-client');
+const { tenantStorageKey } = require('./storage-keys');
 
 const DEFAULT_BUCKET = 'career-ops-files';
 
@@ -6,14 +7,14 @@ const DEFAULT_BUCKET = 'career-ops-files';
  * SupabaseRepository implements the same interface as LocalCareerOpsRepository
  * but stores tenant documents in Postgres (text) and Supabase Storage (binary).
  *
- * Reads are served from an in-memory cache populated by initialize(), keeping
- * all downstream services synchronous. Writes return a Promise — callers that
- * care about durability should await them.
+ * Text reads are served from an in-memory cache populated by initialize().
+ * Binary reads and output listings use Supabase Storage directly.
  */
 class SupabaseRepository {
   constructor({ tenantId, client, env = process.env } = {}) {
     if (!tenantId) throw new Error('SupabaseRepository requires a tenantId');
     this.tenantId = tenantId;
+    this.storageAdapter = 'supabase';
     this.client = client || createSupabaseServerClient(env);
     this.bucket = env.SUPABASE_STORAGE_BUCKET || DEFAULT_BUCKET;
     // cache: Map<path, { content: string, updated_at: string }>
@@ -40,19 +41,26 @@ class SupabaseRepository {
     }
   }
 
-  // ── Path helpers (logical keys, not filesystem paths) ────────────────────────
+  // ── Path helpers (tenant-relative logical keys) ──────────────────────────────
 
-  tenantRoot() { return `users/${this.tenantId}`; }
+  tenantRoot() { return ''; }
   profilePath() { return 'config/profile.yml'; }
   portalsPath() { return 'portals.yml'; }
   agentProfilePath() { return 'modes/_profile.md'; }
   cvPath() { return 'cv.md'; }
+  articleDigestPath() { return 'article-digest.md'; }
+  storyBankPath() { return 'interview-prep/story-bank.md'; }
   dataPath(filename) { return `data/${filename}`; }
   reportsDir() { return 'reports'; }
   outputDir() { return 'output'; }
   interviewPrepDir() { return 'interview-prep'; }
+  jdsDir() { return 'jds'; }
 
-  // ── Sync reads (from cache) ──────────────────────────────────────────────────
+  storageKey(relPath) {
+    return tenantStorageKey(this.tenantId, relPath);
+  }
+
+  // ── Sync reads (text from cache) ─────────────────────────────────────────────
 
   exists(key) {
     return this._cache.has(key);
@@ -63,16 +71,11 @@ class SupabaseRepository {
     return entry ? entry.content : null;
   }
 
-  // Binary reads come from Supabase Storage (async, called directly in routes)
-  readBinary(key) {
-    throw new Error(
-      'SupabaseRepository.readBinary is async — use readBinaryAsync() or the object store directly.'
-    );
-  }
+  async readBinary(key) {
+    const { data, error } = await this.client.storage
+      .from(this.bucket)
+      .download(this.storageKey(key));
 
-  async readBinaryAsync(key) {
-    const storageKey = `${this.tenantId}/${key}`;
-    const { data, error } = await this.client.storage.from(this.bucket).download(storageKey);
     if (error) return null;
     return Buffer.from(await data.arrayBuffer());
   }
@@ -94,24 +97,23 @@ class SupabaseRepository {
   }
 
   async writeBinary(key, content) {
-    const storageKey = `${this.tenantId}/${key}`;
     const { error } = await this.client.storage
       .from(this.bucket)
-      .upload(storageKey, content, { upsert: true, contentType: 'application/pdf' });
+      .upload(this.storageKey(key), content, { upsert: true, contentType: 'application/pdf' });
 
     if (error) throw new Error(`SupabaseRepository.writeBinary(${key}) failed: ${error.message}`);
   }
 
   async getSignedUrl(key, expiresIn = 3600) {
-    const storageKey = `${this.tenantId}/${key}`;
     const { data, error } = await this.client.storage
       .from(this.bucket)
-      .createSignedUrl(storageKey, expiresIn);
+      .createSignedUrl(this.storageKey(key), expiresIn);
+
     if (error) throw error;
     return data.signedUrl;
   }
 
-  // ── Directory listings (from cache) ─────────────────────────────────────────
+  // ── Directory listings (text from cache) ────────────────────────────────────
 
   listMarkdownReports() {
     const prefix = 'reports/';
@@ -150,15 +152,24 @@ class SupabaseRepository {
   // ── Storage listing (binary files) ──────────────────────────────────────────
 
   async listStorageFiles(prefix) {
-    const storagePrefix = `${this.tenantId}/${prefix}`;
+    const storagePrefix = this.storageKey(prefix.endsWith('/') ? prefix.slice(0, -1) : prefix);
     const { data, error } = await this.client.storage.from(this.bucket).list(storagePrefix, {
       sortBy: { column: 'updated_at', order: 'desc' }
     });
+
     if (error) return [];
-    return (data || []).map(item => ({
-      filename: item.name,
-      stat: { mtime: new Date(item.updated_at), size: item.metadata?.size ?? null }
-    }));
+
+    return (data || [])
+      .filter(item => item.name && item.name !== '.gitkeep')
+      .map(item => ({
+        filename: item.name,
+        path: `${prefix}/${item.name}`.replace(/\/+/g, '/'),
+        stat: { mtime: new Date(item.updated_at), size: item.metadata?.size ?? null }
+      }));
+  }
+
+  async listOutputFiles() {
+    return this.listStorageFiles(this.outputDir());
   }
 }
 
