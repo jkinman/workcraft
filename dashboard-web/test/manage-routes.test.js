@@ -147,4 +147,46 @@ describe('manage routes', () => {
     expect(written).toContain('Jane Smith');
     expect(written).toContain('AI Engineer');
   });
+
+  it('saves structured search settings as portals.yml', async () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'career-ops-manage-'));
+    const { PUT } = await importRoute('../app/api/manage/portals/route.js', rootPath);
+
+    const response = await PUT(putRequest('http://localhost/api/manage/portals', {
+      portals: {
+        titleFilter: { positive: ['Frontend Engineer'], negative: ['Intern'], seniority_boost: ['Senior'] },
+        searchQueries: [{ name: 'Web — remote', query: '"Frontend Engineer" remote jobs', enabled: true }],
+        trackedCompanies: []
+      }
+    }, 'tenant-a'));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.success).toBe(true);
+    const written = readFileSync(join(rootPath, 'tenants', 'tenant-a', 'portals.yml'), 'utf8');
+    expect(written).toContain('Frontend Engineer');
+    expect(written).toContain('search_queries');
+  });
+
+  it('imports a text resume through the import route', async () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'career-ops-manage-'));
+    const { POST } = await importRoute('../app/api/manage/resume/import/route.js', rootPath);
+
+    const form = new FormData();
+    form.append('file', new File(['Jordan Lee\nNurse with 8 years'], 'resume.txt', { type: 'text/plain' }));
+
+    const response = await POST(
+      new Request('http://localhost/api/manage/resume/import', {
+        method: 'POST',
+        headers: { 'x-tenant-id': 'tenant-a' },
+        body: form
+      })
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.content).toContain('# Jordan Lee');
+    expect(json.structured).toBe(false);
+  });
 });

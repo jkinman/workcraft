@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
+import { collectValidationErrors } from '../../lib/services/onboarding-validation';
 import { ClerkIdentityLoader } from './ClerkIdentityLoader';
 
 function toggle(list, value) {
@@ -33,17 +34,15 @@ export function OnboardingWizard({ options, initialAnswers, authEnabled = false 
 
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState([]);
 
   const applyIdentity = useCallback(identity => {
     setFullName(prev => prev || identity.fullName);
     setEmail(prev => prev || identity.email);
   }, []);
 
-  async function submit() {
-    setIsSaving(true);
-    setError(null);
-
-    const answers = {
+  function buildAnswers() {
+    return {
       fullName,
       email,
       location: { city, region, country },
@@ -53,6 +52,20 @@ export function OnboardingWizard({ options, initialAnswers, authEnabled = false 
       seniority,
       compensation: { currency: compCurrency, minimum: compMin, target: compTarget }
     };
+  }
+
+  async function submit() {
+    const answers = buildAnswers();
+    const validationErrors = collectValidationErrors(answers);
+    if (validationErrors.length) {
+      setFieldErrors(validationErrors);
+      setError(validationErrors.join(' '));
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+    setFieldErrors([]);
 
     try {
       const response = await fetch('/api/onboarding', {
@@ -220,7 +233,17 @@ export function OnboardingWizard({ options, initialAnswers, authEnabled = false 
         </div>
       </section>
 
-      {error ? <div className="alert error">{error}</div> : null}
+      {fieldErrors.length ? (
+        <div className="alert error" role="alert">
+          <ul className="validation-list">
+            {fieldErrors.map(message => (
+              <li key={message}>{message}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {error && !fieldErrors.length ? <div className="alert error">{error}</div> : null}
 
       <div className="onboarding-actions">
         <button className="btn btn-success btn-lg" type="button" disabled={isSaving} onClick={submit}>

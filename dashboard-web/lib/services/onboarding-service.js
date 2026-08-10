@@ -103,8 +103,12 @@ const ROLE_PRESETS = {
 // are actually relevant. Non-tech users shouldn't inherit a list of tech employers.
 const TECH_PRESETS = new Set(['ai-ml', 'software', 'data', 'product', 'design', 'devops', 'solutions', 'security']);
 
-const SENIORITY_OPTIONS = ['Junior', 'Mid', 'Senior', 'Staff', 'Principal', 'Lead', 'Head', 'Director'];
-const WORK_MODE_OPTIONS = ['remote', 'hybrid', 'onsite'];
+const {
+  WORK_MODE_OPTIONS,
+  SENIORITY_OPTIONS,
+  normalizeAnswers,
+  validateAnswers
+} = require('./onboarding-validation');
 
 const BASE_NEGATIVE_KEYWORDS = ['Intern', 'Internship'];
 
@@ -124,38 +128,6 @@ function uniqueClean(values) {
     result.push(trimmed);
   }
   return result;
-}
-
-function normalizeAnswers(input = {}) {
-  const location = input.location || {};
-  return {
-    fullName: (input.fullName || '').trim(),
-    email: (input.email || '').trim(),
-    linkedin: (input.linkedin || '').trim(),
-    location: {
-      city: (location.city || '').trim(),
-      region: (location.region || '').trim(),
-      country: (location.country || '').trim(),
-      timezone: (location.timezone || '').trim()
-    },
-    workModes: (Array.isArray(input.workModes) ? input.workModes : []).filter(mode =>
-      WORK_MODE_OPTIONS.includes(mode)
-    ),
-    roleFocus: (Array.isArray(input.roleFocus) ? input.roleFocus : []).filter(id => ROLE_PRESETS[id]),
-    customKeywords: uniqueClean(
-      Array.isArray(input.customKeywords)
-        ? input.customKeywords
-        : String(input.customKeywords || '').split(',')
-    ),
-    seniority: (Array.isArray(input.seniority) ? input.seniority : []).filter(level =>
-      SENIORITY_OPTIONS.includes(level)
-    ),
-    compensation: {
-      currency: (input.compensation?.currency || 'USD').trim() || 'USD',
-      minimum: (input.compensation?.minimum || '').trim(),
-      target: (input.compensation?.target || '').trim()
-    }
-  };
 }
 
 function resolveKeywords(answers) {
@@ -357,27 +329,6 @@ function reconstructAnswers(profileContent) {
       target: compensation.target
     }
   });
-}
-
-function validateAnswers(answers) {
-  const errors = [];
-  if (!answers.workModes.length) {
-    errors.push('Pick at least one work style (remote, hybrid, or on-site).');
-  }
-  if (!answers.roleFocus.length && !answers.customKeywords.length) {
-    errors.push('Pick at least one role focus or add a keyword.');
-  }
-  if ((answers.workModes.includes('hybrid') || answers.workModes.includes('onsite')) && !answers.location.city) {
-    errors.push('Add your city for hybrid or on-site roles.');
-  }
-  if (!answers.location.city && !answers.location.country) {
-    errors.push('Add your location (city or country).');
-  }
-  if (errors.length) {
-    const error = new Error(errors.join(' '));
-    error.validation = errors;
-    throw error;
-  }
 }
 
 function createOnboardingService(services) {
