@@ -22,10 +22,18 @@ modes/_profile.md
 .update-dismissed
 .update-lock
 
+# Multi-tenant user data (Clerk-namespaced, never commit)
+tenants/
+cv.md
+
 # Generated
+.env.local
+.env.*.local
 .resolved-prompt-*
 .next/
 dashboard-web/.next/
+supabase/.temp/
+dashboard-web/supabase/.temp/
 node_modules/
 bun.lock
 

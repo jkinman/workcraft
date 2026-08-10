@@ -79,6 +79,38 @@ input {
   gap: 6px;
 }
 
+.header-actions,
+.auth-controls {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.editor-textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  margin: 8px 0;
+  min-height: 360px;
+  resize: vertical;
+  white-space: pre;
+  width: 100%;
+}
+
+.manage-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.manage-card {
+  display: block;
+  text-decoration: none;
+}
+
+.manage-card:hover {
+  background: var(--bg-hover);
+}
+
 .nav-btn,
 .btn {
   background: transparent;
@@ -212,6 +244,11 @@ input {
   background: var(--bg-hover);
 }
 
+.scroll-list {
+  max-height: 460px;
+  overflow-y: auto;
+}
+
 .job-table {
   border-collapse: collapse;
   width: 100%;
@@ -332,6 +369,195 @@ input {
   padding: 8px;
 }
 
+/* -- Buttons -- */
+.btn-lg {
+  font-size: 13px;
+  padding: 12px 20px;
+}
+
+/* -- Resume import -- */
+.resume-import {
+  align-items: center;
+  background: var(--bg);
+  border: 1px dashed var(--border-light);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+}
+
+/* -- Activity list -- */
+.activity-list {
+  display: grid;
+  gap: 8px;
+}
+
+.activity-link {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.activity-main {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* -- Welcome hero (command center) -- */
+.welcome-hero {
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--success);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin: 18px 0 8px;
+  padding: 20px;
+}
+
+.welcome-text {
+  display: grid;
+  gap: 4px;
+}
+
+.welcome-headline {
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 800;
+  margin: 0;
+}
+
+/* -- Next-actions checklist -- */
+.checklist {
+  display: grid;
+  gap: 8px;
+}
+
+.checklist-item {
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  text-decoration: none;
+}
+
+.checklist-item:hover {
+  background: var(--bg-hover);
+}
+
+.checklist-item.done {
+  opacity: 0.6;
+}
+
+.checklist-mark {
+  font-weight: 800;
+}
+
+.checklist-body {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+}
+
+.checklist-body strong {
+  color: var(--text);
+}
+
+.checklist-cta {
+  color: var(--primary-dim);
+  font-weight: 800;
+}
+
+/* -- Onboarding wizard -- */
+.onboarding {
+  display: grid;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.onboarding-hero {
+  margin-bottom: 4px;
+}
+
+.onboarding-headline {
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 800;
+  margin: 4px 0 8px;
+}
+
+.onboarding-step {
+  display: grid;
+  gap: 14px;
+}
+
+.step-head {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.step-num {
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  color: var(--primary-dim);
+  display: flex;
+  font-weight: 800;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 14px;
+}
+
+.chip:hover {
+  border-color: var(--primary-dim);
+}
+
+.chip-on {
+  background: var(--success-bg);
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.field-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.onboarding-actions {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  margin-top: 4px;
+}
+
 @media (max-width: 680px) {
   .stats-bar {
     grid-template-columns: repeat(2, 1fr);
@@ -341,4 +567,204 @@ input {
   .job-table td:nth-child(4) {
     display: none;
   }
+
+  .welcome-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* === STRUCTURED FORMS === */
+.form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.form-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.form-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.tag-input {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-alt);
+  min-height: 38px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid var(--success);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+.tag-x {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+
+.tag-entry {
+  flex: 1;
+  min-width: 120px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+  padding: 4px;
+}
+
+.repeatable {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.repeatable-item {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px;
+  padding-top: 34px;
+  background: var(--bg-card);
+}
+
+.repeatable-controls {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+}
+
+.icon-btn {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: 3px;
+  width: 24px;
+  height: 24px;
+  line-height: 1;
+  font-size: 13px;
+}
+
+.icon-btn:hover:not(:disabled) {
+  border-color: var(--primary-dim);
+  color: var(--text);
+}
+
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.icon-btn.danger:hover:not(:disabled) {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.prefill-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px dashed var(--primary-dim);
+  border-radius: 6px;
+  background: var(--bg-alt);
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.suggestion-chip {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 3px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.suggestion-chip:hover {
+  border-color: var(--primary-dim);
+  color: var(--text);
+}
+
+/* === RESUME PREVIEW === */
+.resume-preview .preview-job {
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.preview-job-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.preview-job-role {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.preview-job-desc {
+  font-style: italic;
+  color: var(--text-dim);
+}
+
+.preview-tech {
+  font-size: 12px;
+  color: var(--primary-dim);
+  margin-top: 4px;
 }

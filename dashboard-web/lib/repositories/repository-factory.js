@@ -1,11 +1,13 @@
 const { LocalCareerOpsRepository } = require('./local-career-ops-repository');
-const { HostedCareerOpsRepository } = require('./hosted-career-ops-repository');
+const { SupabaseRepository } = require('./supabase-repository');
 
-function createRepository(tenantContext = {}) {
+async function createRepository(tenantContext = {}) {
   const mode = tenantContext.mode || 'local-dev';
 
   if (mode === 'hosted') {
-    return new HostedCareerOpsRepository({ tenantId: tenantContext.tenantId });
+    const repo = new SupabaseRepository({ tenantId: tenantContext.tenantId });
+    await repo.initialize();
+    return repo;
   }
 
   return new LocalCareerOpsRepository({ tenantId: tenantContext.tenantId });

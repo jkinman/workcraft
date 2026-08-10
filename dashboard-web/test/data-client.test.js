@@ -40,10 +40,10 @@ describe('CareerOpsDataClient', () => {
     expect(client.readStoryBank()).toBeNull();
   });
 
-  it('stores generated files through the data client interface', () => {
+  it('stores generated files through the data client interface', async () => {
     const { client } = makeClient();
 
-    const metadata = client.putGeneratedFile({
+    const metadata = await client.putGeneratedFile({
       filename: 'cv-test-user-acme-2026-05-25.pdf',
       content: Buffer.from('pdf'),
       type: 'resume',

@@ -3,28 +3,40 @@ const { createDataClient } = require('../data/career-ops-data-client');
 const { createPipelineService } = require('./pipeline-service');
 const { createReportService } = require('./report-service');
 const { createScanService } = require('./scan-service');
+const { createSettingsService } = require('./settings-service');
 const { createSetupService } = require('./setup-service');
 const { createStateService } = require('./state-service');
 const { createWorkloadRunner } = require('./workload-runner');
+const { createOnboardingService } = require('./onboarding-service');
+const { createCareerOpsObjectStore, createCareerOpsStore } = require('../stores/store-factory');
 
-function createCareerOpsServices(tenantContext) {
-  const repository = createRepository(tenantContext);
+async function createCareerOpsServices(tenantContext) {
+  const repository = await createRepository(tenantContext);
   const dataClient = createDataClient(repository);
+  const store = createCareerOpsStore({ dataClient, tenantContext });
+  const objectStore = createCareerOpsObjectStore({ dataClient, tenantContext });
 
-  return {
+  const services = {
     dataClient,
+    objectStore,
     repository,
+    store,
     pipeline: createPipelineService(dataClient),
     reports: createReportService(dataClient),
     runner: createWorkloadRunner(dataClient, tenantContext),
     scan: createScanService(dataClient),
+    settings: createSettingsService(dataClient),
     setup: createSetupService(dataClient),
     state: createStateService(dataClient)
   };
+
+  services.onboarding = createOnboardingService(services);
+
+  return services;
 }
 
-function getDashboardModel(tenantContext) {
-  const services = createCareerOpsServices(tenantContext);
+async function getDashboardModel(tenantContext) {
+  const services = await createCareerOpsServices(tenantContext);
   const evaluations = services.reports.listEvaluations();
   const pipeline = services.pipeline.list();
 

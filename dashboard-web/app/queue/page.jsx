@@ -8,13 +8,13 @@ const { getTenantDashboardModel, getTenantServices } = tenantServices;
 
 export default async function QueuePage() {
   const requestContext = { headers: await headers() };
-  const { tenant, model } = getTenantDashboardModel(requestContext);
-  const { services } = getTenantServices(requestContext);
+  const { tenant, model } = await getTenantDashboardModel(requestContext);
+  const { services } = await getTenantServices(requestContext);
   const setupStatus = services.setup.getStatus();
 
   return (
     <>
-      <Header stats={model.stats} activeView="queue" tenantId={tenant.tenantId} />
+      <Header stats={model.stats} activeView="queue" tenantId={tenant.tenantId} showAuth={tenant.tenantSource === 'auth'} />
       <main className="container">
         <SetupPanel status={setupStatus} title="Queue setup" />
 

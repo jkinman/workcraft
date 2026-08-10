@@ -232,8 +232,10 @@ Before production deploy:
 - Add hosted environment documentation:
   - `CLERK_SECRET_KEY`.
   - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`.
-  - database connection string.
-  - object storage credentials.
+  - `CAREER_OPS_STORAGE_ADAPTER=supabase`.
+  - `SUPABASE_URL`.
+  - `SUPABASE_SERVICE_ROLE_KEY`.
+  - `SUPABASE_STORAGE_BUCKET` (defaults to `career-ops-files`).
   - job provider signing keys or API keys.
   - `CAREER_OPS_TENANT_MODE=hosted`.
 - Add Vercel configuration only after scan/PDF work is moved out of request paths.
@@ -265,14 +267,12 @@ Hosted-specific tests:
 ## Implementation Order
 
 1. Add Clerk dependency, middleware, auth adapter, and tenant tests.
-2. Add database schema and migration tooling.
-3. Add object storage client and `generated_files` metadata flow.
-4. Add hosted repository implementation behind `CareerOpsDataClient`.
-5. Move profile, CV, search config, queue, applications, and evaluations to hosted storage.
-6. Convert scan and PDF routes into job triggers.
-7. Add worker implementation for scan, liveness, and PDF jobs.
-8. Remove or guard hosted use of local filesystem, `child_process`, and direct Playwright.
+2. Add storage adapter interfaces and Supabase adapter skeleton.
+3. Add database schema and migration tooling.
+4. Add object storage client and `generated_files` metadata flow.
+5. Add hosted repository implementation behind `CareerOpsDataClient`.
+6. Move profile, CV, search config, queue, applications, and evaluations to hosted storage.
+7. Convert scan and PDF routes into job triggers.
+8. Add worker implementation for scan, liveness, and PDF jobs.
+9. Remove or guard hosted use of local filesystem, `child_process`, and direct Playwright.
 
-## Known Follow-Up Bug
-
-`dashboard-web/lib/services/scan-service.js` references `path.basename` without importing `path`. This is separate from the hosted architecture work, but it should be fixed before relying on the scan page with existing report data.

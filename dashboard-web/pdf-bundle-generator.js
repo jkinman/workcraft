@@ -338,6 +338,13 @@ body {
   line-height: 1.4;
 }
 
+.job-tech {
+  font-size: 8.5px;
+  color: var(--primary-dim);
+  margin-top: 4px;
+  letter-spacing: 0.02em;
+}
+
 /* Skills */
 .skills-grid {
   display: grid;
@@ -637,19 +644,32 @@ function buildResumeHTML(cv, profile, keywords, company, role, format) {
     summary += ` Seeking to bring 20+ years of engineering expertise to ${company} as ${role}.`;
   }
 
+  // Aggregate the per-job technologies as a fallback when the dedicated Skills
+  // section is empty (common after a fresh resume import).
+  const experienceTech = [];
+  for (const exp of cv.experience) {
+    for (const tech of exp.technologies || []) {
+      if (!experienceTech.includes(tech)) experienceTech.push(tech);
+    }
+  }
+
   // Competencies
   const allSkills = [
     ...cv.skills.frontend, ...cv.skills.backend, ...cv.skills.cloud,
     ...cv.skills.data, ...cv.skills.architecture
   ];
-  const competenciesHtml = allSkills.slice(0, 12).map(k => {
+  const competencyItems = (allSkills.length ? allSkills : experienceTech).slice(0, 16);
+  const competenciesHtml = competencyItems.map(k => {
     const isHighlight = matchedKeywords.has(k.toLowerCase());
     return `<span class="competency-tag ${isHighlight ? 'highlight' : ''}">${k}</span>`;
   }).join('');
 
-  // Experience
+  // Experience — render every achievement plus the recovered tech stack.
   const experienceHtml = cv.experience.map(exp => {
-    const bullets = exp.highlights.slice(0, 2).map(h => `<li>${h}</li>`).join('');
+    const bullets = (exp.highlights || []).map(h => `<li>${h}</li>`).join('');
+    const tech = (exp.technologies || []).length
+      ? `<div class="job-tech">${exp.technologies.join(' · ')}</div>`
+      : '';
     return `
     <div class="job">
       <div class="job-header">
@@ -658,12 +678,13 @@ function buildResumeHTML(cv, profile, keywords, company, role, format) {
       </div>
       <div class="job-role">${exp.role}</div>
       ${exp.description ? `<div class="job-desc">${exp.description}</div>` : ''}
-      <ul class="job-bullets">${bullets}</ul>
+      ${bullets ? `<ul class="job-bullets">${bullets}</ul>` : ''}
+      ${tech}
     </div>`;
   }).join('');
 
-  // Skills grid
-  const skillsHtml = Object.entries(cv.skills)
+  // Skills grid — fall back to aggregated experience tech when empty.
+  let skillsHtml = Object.entries(cv.skills)
     .filter(([_, items]) => items.length > 0)
     .map(([cat, items]) => `
       <div class="skill-category">
@@ -671,6 +692,13 @@ function buildResumeHTML(cv, profile, keywords, company, role, format) {
         <div class="skill-items">${items.join(' • ')}</div>
       </div>
     `).join('');
+  if (!skillsHtml && experienceTech.length) {
+    skillsHtml = `
+      <div class="skill-category">
+        <div class="skill-category-name">Technologies</div>
+        <div class="skill-items">${experienceTech.join(' • ')}</div>
+      </div>`;
+  }
 
   // Strengths
   const strengthsHtml = cv.strengths.slice(0, 5).map(s => `<li>${s}</li>`).join('');

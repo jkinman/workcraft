@@ -13,8 +13,8 @@ const { scoreToGrade } = scoreModule;
 export default async function JobDetailPage({ params }) {
   const requestContext = { headers: await headers() };
   const { slug } = await params;
-  const { tenant, model } = getTenantDashboardModel(requestContext);
-  const { services } = getTenantServices(requestContext);
+  const { tenant, model } = await getTenantDashboardModel(requestContext);
+  const { services } = await getTenantServices(requestContext);
   const job = services.reports.getBySlug(slug);
 
   if (!job) notFound();
@@ -28,7 +28,7 @@ export default async function JobDetailPage({ params }) {
 
   return (
     <>
-      <Header stats={model.stats} activeView="ranked" tenantId={tenant.tenantId} />
+      <Header stats={model.stats} activeView="ranked" tenantId={tenant.tenantId} showAuth={tenant.tenantSource === 'auth'} />
       <main className="container">
         <div className="card">
           <div className="grid-two">

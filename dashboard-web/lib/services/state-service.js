@@ -68,7 +68,7 @@ function createStateService(dataClient) {
       return { state: fm.state, history: fm.state_history };
     },
 
-    transition(slug, newState) {
+    async transition(slug, newState) {
       const file = findReportFile(dataClient, slug);
       if (!file) {
         return { success: false, error: `Report not found for slug: ${slug}` };
@@ -77,7 +77,7 @@ function createStateService(dataClient) {
       const result = transitionReportContent(dataClient.readReport(file.filename) || '', newState);
       if (!result.success) return result;
 
-      dataClient.writeReport(file.filename, result.content);
+      await dataClient.writeReport(file.filename, result.content);
       delete result.content;
       return result;
     },

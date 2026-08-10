@@ -2,7 +2,7 @@ import tenantServices from '../../../lib/tenant-services';
 
 export async function POST(request) {
   const url = new URL(request.url);
-  const { services } = tenantServices.getTenantServices(request);
+  const { services } = await tenantServices.getTenantServices(request);
   const dryRun = url.searchParams.get('dryRun') === 'true';
   const deepDive = url.searchParams.get('deepDive') === 'true';
 

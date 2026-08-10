@@ -75,7 +75,7 @@ function createScanService(dataClient) {
         portalBreakdown,
         recentScans,
         pendingJobs: pipelineJobs.length,
-        pipelineJobs: pipelineJobs.slice(-10),
+        pipelineJobs,
         totalEvaluated: reportFiles.length,
         recentEvaluations,
         companiesEnabled: getEnabledCompanyCount(dataClient)

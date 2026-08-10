@@ -7,7 +7,7 @@ const { jsonError, requireString } = validation;
 const { generateFullEvalReportPDF } = pdfBundle;
 
 export async function POST(request) {
-  const { services } = getTenantServices(request);
+  const { services } = await getTenantServices(request);
   const body = await request.json().catch(() => ({}));
 
   try {

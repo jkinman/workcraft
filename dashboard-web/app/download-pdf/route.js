@@ -8,7 +8,7 @@ const { pdfDownloadHeaders, validatePdfFilename } = outputFiles;
 
 export async function GET(request) {
   const url = new URL(request.url);
-  const { services } = getTenantServices(request);
+  const { services } = await getTenantServices(request);
 
   let filename;
   try {

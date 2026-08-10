@@ -9,14 +9,14 @@ const { getTenantDashboardModel, getTenantServices } = tenantServices;
 
 export default async function ScanPage() {
   const requestContext = { headers: await headers() };
-  const { tenant, model } = getTenantDashboardModel(requestContext);
-  const { services } = getTenantServices(requestContext);
+  const { tenant, model } = await getTenantDashboardModel(requestContext);
+  const { services } = await getTenantServices(requestContext);
   const stats = services.scan.getStats();
   const setupStatus = services.setup.getStatus();
 
   return (
     <>
-      <Header stats={model.stats} activeView="scan" tenantId={tenant.tenantId} />
+      <Header stats={model.stats} activeView="scan" tenantId={tenant.tenantId} showAuth={tenant.tenantSource === 'auth'} />
       <main className="container">
         <SetupPanel status={setupStatus} title="Scanner setup" />
 
@@ -48,7 +48,7 @@ export default async function ScanPage() {
         </div>
 
         <div className="section-title">Pending Pipeline ({stats.pendingJobs})</div>
-        <div className="card">
+        <div className="card scroll-list">
           {stats.pipelineJobs.length ? (
             stats.pipelineJobs.map(job => (
               <div className="activity-row" key={`${job.url}-${job.role}`}>

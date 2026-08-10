@@ -5,12 +5,12 @@ const { getTenantServices } = tenantServices;
 const { jsonError, jsonSuccess } = validation;
 
 export async function GET(request) {
-  const { services } = getTenantServices(request);
+  const { services } = await getTenantServices(request);
   return jsonSuccess({ status: services.setup.getStatus() });
 }
 
 export async function POST(request) {
-  const { services } = getTenantServices(request);
+  const { services } = await getTenantServices(request);
   const body = await request.json().catch(() => ({}));
   const target = body.target || 'all';
 
@@ -19,7 +19,7 @@ export async function POST(request) {
   }
 
   try {
-    return jsonSuccess(services.setup.initialize(target));
+    return jsonSuccess(await services.setup.initialize(target));
   } catch (error) {
     return jsonError(error.message, 500);
   }

@@ -1,3 +1,4 @@
+const yaml = require('js-yaml');
 const { jsonError, jsonNotFound, jsonSuccess } = require('./responses');
 const { STATE_META } = require('../workflow-states');
 
@@ -8,6 +9,23 @@ function requireString(value, fieldName) {
     throw new Error(`${fieldName} is required`);
   }
   return value.trim();
+}
+
+function requireNonEmpty(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`${fieldName} is required`);
+  }
+  return value;
+}
+
+function validateYaml(value, fieldName) {
+  const content = requireNonEmpty(value, fieldName);
+  try {
+    yaml.load(content);
+  } catch (error) {
+    throw new Error(`Invalid ${fieldName}: ${error.message}`);
+  }
+  return content;
 }
 
 function validateUrl(value) {
@@ -31,7 +49,9 @@ module.exports = {
   jsonError,
   jsonNotFound,
   jsonSuccess,
+  requireNonEmpty,
   requireString,
   validateState,
-  validateUrl
+  validateUrl,
+  validateYaml
 };

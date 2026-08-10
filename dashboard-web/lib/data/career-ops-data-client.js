@@ -18,11 +18,15 @@ class CareerOpsDataClient {
   }
 
   writeProfile(content) {
-    this.repository.writeText(this.repository.profilePath(), content);
+    return this.repository.writeText(this.repository.profilePath(), content);
   }
 
   readCv() {
     return this.readOptionalText(this.repository.cvPath());
+  }
+
+  writeCv(content) {
+    return this.repository.writeText(this.repository.cvPath(), content);
   }
 
   readPortals() {
@@ -30,7 +34,7 @@ class CareerOpsDataClient {
   }
 
   writePortals(content) {
-    this.repository.writeText(this.repository.portalsPath(), content);
+    return this.repository.writeText(this.repository.portalsPath(), content);
   }
 
   readArticleDigest() {
@@ -42,7 +46,7 @@ class CareerOpsDataClient {
   }
 
   writeAgentProfile(content) {
-    this.repository.writeText(this.repository.agentProfilePath(), content);
+    return this.repository.writeText(this.repository.agentProfilePath(), content);
   }
 
   readStoryBank() {
@@ -76,7 +80,7 @@ class CareerOpsDataClient {
   }
 
   writePipeline(content) {
-    this.repository.writeText(this.repository.dataPath('pipeline.md'), content);
+    return this.repository.writeText(this.repository.dataPath('pipeline.md'), content);
   }
 
   readApplications() {
@@ -84,7 +88,7 @@ class CareerOpsDataClient {
   }
 
   writeApplications(content) {
-    this.repository.writeText(this.repository.dataPath('applications.md'), content);
+    return this.repository.writeText(this.repository.dataPath('applications.md'), content);
   }
 
   readFollowUps() {
@@ -117,7 +121,8 @@ class CareerOpsDataClient {
 
   writeReport(filename, content) {
     const safeName = path.basename(filename);
-    this.repository.writeText(path.join(this.repository.reportsDir(), safeName), content);
+    const key = `${this.repository.reportsDir()}/${safeName}`;
+    return this.repository.writeText(key, content);
   }
 
   readOutputFile(filename) {
@@ -126,18 +131,19 @@ class CareerOpsDataClient {
     return this.repository.exists(filePath) ? this.repository.readBinary(filePath) : null;
   }
 
-  writeOutputFile(filename, content) {
+  async writeOutputFile(filename, content) {
     const safeName = path.basename(filename);
-    this.repository.writeBinary(path.join(this.repository.outputDir(), safeName), content);
+    const key = `${this.repository.outputDir()}/${safeName}`;
+    return this.repository.writeBinary(key, content);
   }
 
-  putGeneratedFile({ filename, content, type = 'unknown', relatedEntity = null }) {
-    this.writeOutputFile(filename, content);
+  async putGeneratedFile({ filename, content, type = 'unknown', relatedEntity = null }) {
+    await this.writeOutputFile(filename, content);
     return {
       filename: path.basename(filename),
       type,
       relatedEntity,
-      storage: 'local',
+      storage: this.repository.constructor?.name?.includes('Supabase') ? 'supabase' : 'local',
       path: this.resolveOutputPath(filename)
     };
   }
@@ -155,6 +161,12 @@ class CareerOpsDataClient {
 
   resolveOutputPath(filename) {
     return path.join(this.repository.outputDir(), path.basename(filename));
+  }
+
+  listGeneratedFiles() {
+    return this.repository
+      .listFilesInDirectory(this.repository.outputDir(), file => file !== '.gitkeep')
+      .map(file => ({ filename: file.filename, stat: file.stat }));
   }
 
   ensureOutputDir() {
