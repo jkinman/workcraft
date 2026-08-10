@@ -13,18 +13,18 @@
 
 import { readFileSync, copyFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { resolveCareerOpsPaths } from './lib/path-roots.mjs';
 import {
   openTrackerTransaction, rebuildRow, resolveTrackerPath,
 } from './tracker-utils.mjs';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
 
-const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
-const APPS_FILE = resolveTrackerPath(CAREER_OPS);
+const { dataRoot: DATA_ROOT } = resolveCareerOpsPaths();
+const APPS_FILE = resolveTrackerPath(DATA_ROOT);
 const DRY_RUN = process.argv.includes('--dry-run');
 
 // Ensure required directories exist (fresh setup)
-mkdirSync(join(CAREER_OPS, 'data'), { recursive: true });
+mkdirSync(join(DATA_ROOT, 'data'), { recursive: true });
 
 // Canonical status mapping
 function normalizeStatus(raw) {

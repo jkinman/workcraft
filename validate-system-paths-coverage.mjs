@@ -4,9 +4,10 @@
  * validate-system-paths-coverage.mjs — structural coverage check for the
  * auto-updater layer split.
  *
- * Every tracked file in the repo must be covered by either SYSTEM_PATHS
- * (system layer, fetched on `update-system.mjs apply`) or USER_PATHS
- * (user-owned, never touched). Anything else is a coverage gap: it
+ * Every tracked file in the repo must be covered by SYSTEM_PATHS
+ * (system layer, fetched on `update-system.mjs apply`), USER_PATHS
+ * (user-owned, never touched), or FORK_PATHS (locally maintained application
+ * seams). Anything else is a coverage gap: it
  * lives in the repo but the auto-updater won't propagate it to
  * clients on `apply`. That breaks them on the next test run.
  *
@@ -32,12 +33,13 @@ const source = readFileSync(sourcePath, 'utf-8');
 
 const SYSTEM_PATHS = extractArrayFromSource(source, 'SYSTEM_PATHS');
 const USER_PATHS = extractArrayFromSource(source, 'USER_PATHS');
+const FORK_PATHS = extractArrayFromSource(source, 'FORK_PATHS');
 
-if (SYSTEM_PATHS.length === 0 || USER_PATHS.length === 0) {
-  console.error('FAIL: SYSTEM_PATHS or USER_PATHS not found in update-system.mjs');
+if (SYSTEM_PATHS.length === 0 || USER_PATHS.length === 0 || FORK_PATHS.length === 0) {
+  console.error('FAIL: SYSTEM_PATHS, USER_PATHS, or FORK_PATHS not found in update-system.mjs');
   process.exit(1);
 }
-const ALL_PATHS = [...SYSTEM_PATHS, ...USER_PATHS];
+const ALL_PATHS = [...SYSTEM_PATHS, ...USER_PATHS, ...FORK_PATHS];
 
 const EXCLUDES = [
   '.coderabbit.yaml',

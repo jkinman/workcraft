@@ -12,17 +12,17 @@
 
 import { readFileSync, copyFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { resolveCareerOpsPaths } from './lib/path-roots.mjs';
 import {
   openTrackerTransaction, rebuildRow, resolveTrackerPath, normalizeCompany,
 } from './tracker-utils.mjs';
 import { resolveColumns, parseTrackerRow, normalizeVia } from './tracker-parse.mjs';
 
-const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
+const { dataRoot: DATA_ROOT } = resolveCareerOpsPaths();
 // Support both layouts: data/applications.md (boilerplate) and applications.md
 // (original). CAREER_OPS_TRACKER lets tests point the script at an isolated
 // fixture so the real user tracker is never touched.
-const APPS_FILE = resolveTrackerPath(CAREER_OPS);
+const APPS_FILE = resolveTrackerPath(DATA_ROOT);
 const DRY_RUN = process.argv.includes('--dry-run');
 
 // Ensure the target tracker directory exists in both normal and fixture mode.

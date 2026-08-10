@@ -16,30 +16,32 @@
 
 import { readFileSync, readdirSync, mkdirSync, renameSync, existsSync } from 'fs';
 import { join, basename, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
+import { resolveCareerOpsPaths } from './lib/path-roots.mjs';
 import { normalizeReportLink as normalizeLink } from './tracker-links.mjs';
 import { roleFuzzyMatch } from './role-matcher.mjs';
 import { parsePdfIndex } from './find.mjs';
 import { LEGACY_COLMAP, detectColumns, resolveScoreStatus, normalizeVia, SEPARATOR_ROW_RE } from './tracker-parse.mjs';
 import { resolveTrackerPath, resolveWorkspaceRoot, resolvePdfIndexPath, trackerLockDirFor, acquireTrackerLock, writeFileAtomic, normalizeCompany, cell } from './tracker-utils.mjs';
 
-const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
+const CAREER_OPS_PATHS = resolveCareerOpsPaths();
+const CAREER_OPS = CAREER_OPS_PATHS.systemRoot;
+const DATA_ROOT = CAREER_OPS_PATHS.dataRoot;
 // Support both layouts: data/applications.md (boilerplate) and applications.md
 // (original). CAREER_OPS_TRACKER overrides the path (used by tests and
 // non-standard layouts). Resolution lives in tracker-utils.mjs so every tracker
 // writer agrees on the same canonical path (and therefore the same lock).
-const APPS_FILE = resolveTrackerPath(CAREER_OPS);
+const APPS_FILE = resolveTrackerPath(DATA_ROOT);
 const TRACKER_DIR = dirname(APPS_FILE);
 // CAREER_OPS_ADDITIONS overrides the additions dir (used by tests, mirrors CAREER_OPS_TRACKER).
 const ADDITIONS_DIR = process.env.CAREER_OPS_ADDITIONS
   ? process.env.CAREER_OPS_ADDITIONS
-  : join(CAREER_OPS, 'batch/tracker-additions');
+  : CAREER_OPS_PATHS.trackerAdditionsDir;
 const MERGED_DIR = join(ADDITIONS_DIR, 'merged');
 // CAREER_OPS_BATCH_STATE overrides the batch-state.tsv path (used by tests).
 const BATCH_STATE_FILE = process.env.CAREER_OPS_BATCH_STATE
   ? process.env.CAREER_OPS_BATCH_STATE
-  : join(CAREER_OPS, 'batch/batch-state.tsv');
+  : join(DATA_ROOT, 'batch/batch-state.tsv');
 
 // Cross-check against batch-state.tsv (found 2026-07-30): a worker can write
 // a well-formed tracker TSV even when its own JSON result said "failed" --
@@ -97,7 +99,7 @@ const PDF_INDEX_FILE = resolvePdfIndexPath(APPS_FILE);
 const normalizeReportLink = (reportField) => normalizeLink(reportField, TRACKER_DIR, REPORTS_ROOT);
 
 // Ensure required directories exist (fresh setup)
-mkdirSync(join(CAREER_OPS, 'data'), { recursive: true });
+mkdirSync(join(DATA_ROOT, 'data'), { recursive: true });
 mkdirSync(ADDITIONS_DIR, { recursive: true });
 
 /**

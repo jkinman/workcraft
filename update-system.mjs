@@ -383,6 +383,18 @@ const BOOTSTRAP_PATHS = [
   'agent-inbox-tests.mjs',
 ];
 
+// Fork-owned application paths — never replace these during an upstream update.
+// Directory system entries such as docs/ are expanded and filtered per file.
+export const FORK_PATHS = [
+  'dashboard-web/',
+  'lib/path-roots.mjs',
+  'lib/scrapers/',
+  'docs/HOSTED_VERCEL_READINESS.md',
+  'docs/FORK_LAYER.md',
+  'HANDOFF.md',
+  'yarn.lock',
+];
+
 // User layer paths — NEVER touch these (safety check)
 /**
  * Files and directories the updater must never touch — the USER layer of the
@@ -406,6 +418,9 @@ export const USER_PATHS = [
   'output/',
   'jds/',
   'writing-samples/',
+  'cvs/',
+  'ai-evaluation-syllabus.md',
+  'langchain-syllabus.md',
   'config/plugins.yml',
   'plugins.local/',
   'plugins.lock',
@@ -541,6 +556,39 @@ function gitQuiet(...args) {
     }
     throw err;
   }
+}
+
+function pathMatches(candidate, protectedPath) {
+  return protectedPath.endsWith('/')
+    ? candidate.startsWith(protectedPath)
+    : candidate === protectedPath;
+}
+
+export function isForkPath(path) {
+  return FORK_PATHS.some(forkPath => pathMatches(path, forkPath));
+}
+
+function remoteFilesForPath(ref, path) {
+  if (!path.endsWith('/')) return [path];
+  try {
+    return gitQuiet('ls-tree', '-r', '--name-only', ref, '--', path)
+      .split('\n')
+      .map(file => file.trim())
+      .filter(Boolean);
+  } catch {
+    return [path];
+  }
+}
+
+export function filterForkPaths(paths) {
+  return paths.filter(path => !isForkPath(path));
+}
+
+function checkoutPathFromRef(ref, path) {
+  const paths = filterForkPaths(remoteFilesForPath(ref, path));
+  if (paths.length === 0) return [];
+  gitQuiet('checkout', ref, '--', ...paths);
+  return paths;
 }
 
 /**
@@ -1012,8 +1060,10 @@ async function apply() {
         // `error: pathspec '...' did not match any file(s) known to git`
         // immediately before the success banner — which reads as a failed
         // update and sends people chasing the wrong root cause (#1998).
-        gitQuiet('checkout', 'FETCH_HEAD', '--', path);
-        updated.push(path);
+        const checkedOut = !path.endsWith('/') && !isForkPath(path)
+          ? (gitQuiet('checkout', 'FETCH_HEAD', '--', path), [path])
+          : checkoutPathFromRef('FETCH_HEAD', path);
+        updated.push(...checkedOut);
       } catch (err) {
         // A path genuinely absent upstream is the expected skip. But the catch
         // also caught timeouts, permission errors, and repo corruption and
@@ -1108,9 +1158,9 @@ async function apply() {
         // Explicit SYSTEM_PATHS entries override USER_PATHS prefix matches.
         // (e.g. writing-samples/README.md is system-owned doc inside a user dir.)
         if (updatePaths.includes(file)) continue;
-        for (const userPath of USER_PATHS) {
-          if (file.startsWith(userPath)) {
-            console.error(`SAFETY VIOLATION: User file was modified: ${file}`);
+        for (const protectedPath of [...USER_PATHS, ...FORK_PATHS]) {
+          if (pathMatches(file, protectedPath)) {
+            console.error(`SAFETY VIOLATION: Protected file was modified: ${file}`);
             violatedUserPaths.add(file);
           }
         }
@@ -1288,8 +1338,8 @@ function rollback() {
     const removed = [];
     for (const path of SYSTEM_PATHS) {
       try {
-        git('checkout', latest, '--', path);
-        restored.push(path);
+        const checkedOut = checkoutPathFromRef(latest, path);
+        restored.push(...checkedOut);
       } catch (err) {
         const pathspec = path.endsWith('/') ? path.slice(0, -1) : path;
         let existedInBackup = true;

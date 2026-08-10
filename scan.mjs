@@ -47,7 +47,22 @@ import { normalizeCompany } from './tracker-utils.mjs';
 import { normalizeCompanyName } from './invite-match.mjs';
 import { withPipelineLock } from './pipeline-lock.mjs';
 import { flagValue, hasFlag } from './lib/cli-flags.mjs';
+import { resolveCareerOpsPaths } from './lib/path-roots.mjs';
 import { withPortalHealthLock } from './portal-health-lock.mjs';
+
+// Fork-only browser scrapers are loaded only for --deep-dive so the standard
+// zero-token provider scan remains independent of Playwright.
+let scraperModule = null;
+async function getDeepDiveScrapers() {
+  if (scraperModule) return scraperModule;
+  try {
+    scraperModule = await import('./lib/scrapers/index.mjs');
+    return scraperModule;
+  } catch (error) {
+    console.warn('[scan] Deep-dive scrapers not available:', error.message);
+    return null;
+  }
+}
 
 try {
   const { config } = await import('dotenv');
@@ -62,17 +77,25 @@ const parseYaml = yaml.load;
 
 // ── Config ──────────────────────────────────────────────────────────
 
-const PORTALS_PATH = process.env.CAREER_OPS_PORTALS || 'portals.yml';
-const PROFILE_PATH = process.env.CAREER_OPS_PROFILE || 'config/profile.yml';
+const CAREER_OPS_PATHS = resolveCareerOpsPaths();
+const TENANT_DATA_ROOT = process.env.CAREER_OPS_DATA_ROOT ? CAREER_OPS_PATHS.dataRoot : null;
+const PORTALS_PATH = process.env.CAREER_OPS_PORTALS || (TENANT_DATA_ROOT ? CAREER_OPS_PATHS.portalsPath : 'portals.yml');
+const PROFILE_PATH = process.env.CAREER_OPS_PROFILE || (TENANT_DATA_ROOT
+  ? path.join(TENANT_DATA_ROOT, 'config/profile.yml')
+  : 'config/profile.yml');
 // Overridable for the same reason the two inputs above are (#2271). A second
 // search lane - a bridge/income track, a career-change track, a partner sharing
 // the checkout - already gets its own portals.yml and profile, but without these
 // two it still writes into the one inbox and the one dedup history. That is not
 // just untidy: scan-history.tsv IS the dedup source, so a posting surfaced in
 // lane A is silently counted as a duplicate in lane B and never shown at all.
-const SCAN_HISTORY_PATH = process.env.CAREER_OPS_SCAN_HISTORY || 'data/scan-history.tsv';
-const PIPELINE_PATH = process.env.CAREER_OPS_PIPELINE || 'data/pipeline.md';
-const APPLICATIONS_PATH = 'data/applications.md';
+const SCAN_HISTORY_PATH = process.env.CAREER_OPS_SCAN_HISTORY || (TENANT_DATA_ROOT
+  ? CAREER_OPS_PATHS.scanHistoryPath
+  : 'data/scan-history.tsv');
+const PIPELINE_PATH = process.env.CAREER_OPS_PIPELINE || (TENANT_DATA_ROOT
+  ? CAREER_OPS_PATHS.pipelinePath
+  : 'data/pipeline.md');
+const APPLICATIONS_PATH = TENANT_DATA_ROOT ? CAREER_OPS_PATHS.applicationsPath : 'data/applications.md';
 const PROVIDERS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'providers');
 
 // Ensure required directories exist (fresh setup). Stays literal: the paths that
@@ -81,7 +104,7 @@ const PROVIDERS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 // is created by acquirePipelineLock, which runs before the first pipeline write.
 // tests/scan-output-paths.test.mjs pins that, so an override into a directory
 // that does not exist yet keeps working if either of those changes.
-mkdirSync('data', { recursive: true });
+mkdirSync(TENANT_DATA_ROOT ? path.join(TENANT_DATA_ROOT, 'data') : 'data', { recursive: true });
 
 const CONCURRENCY = 10;
 
@@ -2011,6 +2034,7 @@ function guardStatusFor(code) {
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
+  const deepDive = args.includes('--deep-dive');
   const verify = args.includes('--verify');
   // Opt-in: on an anti-bot challenge (e.g. pracuj.pl Cloudflare wall), retry the
   // URL in a headed browser. Off by default — headed Chromium needs a display, so
@@ -2116,6 +2140,82 @@ async function main() {
   const companies = Array.isArray(config.tracked_companies) ? config.tracked_companies : [];
   const boards = Array.isArray(config.job_boards) ? config.job_boards : [];
   const titleFilter = buildTitleFilter(config.title_filter);
+
+  if (deepDive) {
+    const scrapers = await getDeepDiveScrapers();
+    if (!scrapers) {
+      console.error('Error: Deep-dive scrapers not available. Run: npm install');
+      process.exit(1);
+    }
+
+    const deepDiveConfig = config.deep_dive || {};
+    const tasks = (Array.isArray(deepDiveConfig.tasks) ? deepDiveConfig.tasks : [])
+      .filter(task => task?.enabled !== false);
+    if (tasks.length === 0) {
+      console.error('Error: No deep-dive tasks configured in portals.yml. Add a deep_dive section.');
+      process.exit(1);
+    }
+
+    console.log(`Deep-dive scan: ${tasks.length} task(s) configured`);
+    if (dryRun) console.log('(dry run — no files will be written)\n');
+
+    const historyPolicy = scanHistoryPolicy(config);
+    const seenUrls = loadSeenUrls(historyPolicy).seen;
+    const canonicalizeCompany = buildCompanyCanonicalizer(config.company_aliases);
+    const seenCompanyRoles = loadSeenCompanyRoles(APPLICATIONS_PATH, canonicalizeCompany, {
+      policy: historyPolicy,
+    });
+    const date = new Date().toISOString().slice(0, 10);
+    let totalFound = 0;
+    let totalFiltered = 0;
+    let totalDupes = 0;
+    const newOffers = [];
+
+    const results = await scrapers.runDeepDive(tasks, {
+      headless: deepDiveConfig.headless !== false,
+      concurrency: deepDiveConfig.concurrency || 1,
+      onProgress: (name, count) => console.log(`  → ${name}: ${count} jobs scraped`),
+    });
+
+    for (const [name, result] of Object.entries(results)) {
+      if (result.errors) {
+        console.warn(`  ✗ ${name}: ${result.errors}`);
+        continue;
+      }
+      totalFound += result.jobs.length;
+      for (const job of result.jobs) {
+        if (!titleFilter(job.title)) {
+          totalFiltered++;
+          continue;
+        }
+        const dedupUrl = normalizeUrlForDedup(job.url);
+        const key = companyRoleDedupKey(job.company, job.title, canonicalizeCompany);
+        if (seenUrls.has(dedupUrl) || seenCompanyRoles.has(key)) {
+          totalDupes++;
+          continue;
+        }
+        seenUrls.add(dedupUrl);
+        seenCompanyRoles.add(key);
+        newOffers.push({ ...job, source: job.source || name });
+      }
+    }
+
+    if (!dryRun && newOffers.length > 0) {
+      await appendToPipeline(newOffers);
+      appendToScanHistory(newOffers, date);
+    }
+
+    console.log(`\n${'━'.repeat(45)}`);
+    console.log(`Deep-Dive Scan — ${date}`);
+    console.log(`${'━'.repeat(45)}`);
+    console.log(`Tasks run:             ${tasks.length}`);
+    console.log(`Total jobs found:      ${totalFound}`);
+    console.log(`Filtered by title:     ${totalFiltered} removed`);
+    console.log(`Duplicates:            ${totalDupes} skipped`);
+    console.log(`New offers added:      ${newOffers.length}`);
+    if (dryRun) console.log('\n(dry run — run without --dry-run to save results)');
+    return;
+  }
 
   // Seniority tier classifier integration
   let classifyTier = null;
