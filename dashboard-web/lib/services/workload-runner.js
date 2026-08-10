@@ -43,37 +43,44 @@ function createLocalWorkloadRunner(dataClient) {
   };
 }
 
-function createHostedWorkloadRunner(tenantContext) {
+function createHostedWorkloadRunner(tenantContext, jobsRepository) {
+  if (!jobsRepository) {
+    throw new Error('Hosted workload runner requires a BackgroundJobsRepository');
+  }
+
+  async function persistJob(jobType, payload) {
+    const job = await jobsRepository.enqueue(tenantContext.tenantId, jobType, payload);
+    return {
+      mode: 'hosted-job',
+      jobId: job.jobId,
+      status: job.status,
+      jobType: job.jobType,
+      pollUrl: job.pollUrl
+    };
+  }
+
   return {
     async runScan(options = {}) {
       return this.enqueueScan(options);
     },
 
     async enqueueScan(options = {}) {
-      return {
-        mode: 'hosted-job',
-        status: 'queued',
-        jobType: 'scan',
-        tenantId: tenantContext.tenantId,
-        options
+      const payload = {
+        dryRun: Boolean(options.dryRun),
+        deepDive: Boolean(options.deepDive)
       };
+      return persistJob('scan', payload);
     },
 
     async enqueuePdf(payload = {}) {
-      return {
-        mode: 'hosted-job',
-        status: 'queued',
-        jobType: 'pdf',
-        tenantId: tenantContext.tenantId,
-        payload
-      };
+      return persistJob('pdf', payload);
     }
   };
 }
 
-function createWorkloadRunner(dataClient, tenantContext = {}) {
+function createWorkloadRunner(dataClient, tenantContext = {}, jobsRepository = null) {
   if (tenantContext.mode === 'hosted') {
-    return createHostedWorkloadRunner(tenantContext);
+    return createHostedWorkloadRunner(tenantContext, jobsRepository);
   }
 
   return createLocalWorkloadRunner(dataClient);

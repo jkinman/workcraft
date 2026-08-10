@@ -1,4 +1,5 @@
 const { createRepository } = require('../repositories/repository-factory');
+const { createBackgroundJobsRepository } = require('../repositories/background-jobs-repository');
 const { createDataClient } = require('../data/career-ops-data-client');
 const { createPipelineService } = require('./pipeline-service');
 const { createReportService } = require('./report-service');
@@ -12,13 +13,15 @@ const { createOnboardingService } = require('./onboarding-service');
 async function createCareerOpsServices(tenantContext) {
   const repository = await createRepository(tenantContext);
   const dataClient = createDataClient(repository);
+  const jobs = tenantContext.mode === 'hosted' ? createBackgroundJobsRepository() : null;
 
   const services = {
     dataClient,
     repository,
+    jobs,
     pipeline: createPipelineService(dataClient),
     reports: createReportService(dataClient),
-    runner: createWorkloadRunner(dataClient, tenantContext),
+    runner: createWorkloadRunner(dataClient, tenantContext, jobs),
     scan: createScanService(dataClient),
     settings: createSettingsService(dataClient),
     setup: createSetupService(dataClient),

@@ -203,12 +203,22 @@ Hosted request paths should trigger work, not run long local commands.
 
 | Workload | Current behavior | Hosted behavior |
 |----------|------------------|-----------------|
-| Standard scan | `/api/scan` runs `scan.mjs` with `execFile` | enqueue `scan` job, persist status in `background_jobs` and `scan_runs` |
-| Deep-dive scan | scanner can load Playwright scrapers | run only in browser-capable worker |
-| PDF generation | API route launches Playwright and writes output | enqueue `pdf` job, worker writes object storage, API returns job id |
+| Standard scan | `/api/scan` runs `scan.mjs` with `execFile` | enqueue `scan` job, return `202` + `pollUrl`, worker runs `scan.mjs` |
+| Deep-dive scan | scanner can load Playwright scrapers | worker-only; same queue contract |
+| PDF generation | API route launches Playwright and writes output | enqueue `pdf` job with `kind` payload, worker generates via Supabase data client |
 | Liveness checks | root CLI uses Playwright | worker job, usually scheduled or attached to evaluation flow |
 | Tracker merge/dedup/normalize | file mutation scripts | replace with DB writes and maintenance jobs |
 | Pipeline verification | reads local files | DB integrity checks or admin diagnostics |
+
+### Queue contract
+
+- Table: `background_jobs` (`tenant_id`, `job_type`, `status`, `payload`, `result`, `error`, `worker_id`, timestamps).
+- RPCs: `claim_next_background_job(worker_id, stale_seconds)` and `reclaim_stale_background_jobs(stale_seconds)` for race-safe claiming.
+- API enqueue: hosted routes persist jobs and return `{ mode: 'hosted-job', jobId, status, jobType, pollUrl }` with HTTP `202`.
+- Poll API: authenticated `GET /api/jobs/[jobId]` (tenant-filtered; cross-tenant returns `404`).
+- Worker: `dashboard-web/scripts/run-worker.mjs` (requires `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`; no public worker endpoint). Run with `npm run worker` or `npm run worker:once`.
+- Scan worker flow: materialize tenant text docs to a temp dir, run root `scan.mjs` with `CAREER_OPS_DATA_ROOT`, sync `data/pipeline.md` and `data/scan-history.tsv` back, delete temp dir.
+- PDF worker flow: load tenant via `SupabaseRepository` + existing PDF generators; payload carries only job inputs (`kind`, company/role/slug), never tenant override.
 
 Job lifecycle:
 
@@ -235,7 +245,7 @@ Before production deploy:
   - `SUPABASE_URL`.
   - `SUPABASE_SERVICE_ROLE_KEY`.
   - `SUPABASE_STORAGE_BUCKET` (defaults to `career-ops-files`).
-  - job provider signing keys or API keys.
+  - `WORKER_ID`, `WORKER_POLL_INTERVAL_MS`, `WORKER_STALE_SECONDS` for the background worker process.
   - `CAREER_OPS_TENANT_MODE=hosted`.
 - Add Vercel configuration only after scan/PDF work is moved out of request paths.
 - Keep `/api/health` public and stateless.

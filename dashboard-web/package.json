@@ -9,6 +9,8 @@
     "start": "next start",
     "legacy:dev": "nodemon server.js",
     "legacy:start": "node server.js",
+    "worker": "node scripts/run-worker.mjs",
+    "worker:once": "node scripts/run-worker.mjs --once",
     "test": "vitest run",
     "test:watch": "vitest"
   },

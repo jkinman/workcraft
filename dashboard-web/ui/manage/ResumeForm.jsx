@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { resolveWorkloadResponse } from '../../lib/client/job-polling';
 import { LinesField, RepeatableList, TagListField, TextAreaField, TextField } from './fields';
 
 const SKILL_CATEGORIES = [
@@ -97,7 +98,13 @@ export function ResumeForm({ initialResume }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ company, role })
       });
-      const data = await response.json();
+      const data = await resolveWorkloadResponse(response, {
+        onProgress: job => {
+          if (job.status === 'queued' || job.status === 'running') {
+            setStatus({ type: 'info', message: `Generating PDF (${job.status})...` });
+          }
+        }
+      });
       if (!data.success) {
         setStatus({ type: 'error', message: data.error || 'PDF generation failed' });
       } else {

@@ -1,8 +1,12 @@
 import tenantServices from '../../../lib/tenant-services';
+import pdfRoute from '../../../lib/api/pdf-route';
+
+const { getTenantServices } = tenantServices;
+const { isHostedJobResult } = pdfRoute;
 
 export async function POST(request) {
   const url = new URL(request.url);
-  const { services } = await tenantServices.getTenantServices(request);
+  const { services } = await getTenantServices(request);
   const dryRun = url.searchParams.get('dryRun') === 'true';
   const deepDive = url.searchParams.get('deepDive') === 'true';
 
@@ -13,7 +17,8 @@ export async function POST(request) {
     }
 
     const result = await services.runner.runScan({ dryRun, deepDive });
-    return Response.json({ success: true, ...result });
+    const status = isHostedJobResult(result) ? 202 : 200;
+    return Response.json({ success: true, ...result }, { status });
   } catch (error) {
     return Response.json({
       success: false,

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { resolveWorkloadResponse } from '../lib/client/job-polling';
 
 const ACTIONS = [
   ['resume', '/api/generate-resume', 'EXPORT_RESUME_PDF'],
@@ -17,24 +18,34 @@ export function JobActions({ company, role, slug, archetype }) {
     setBusyAction(id);
     setStatus(null);
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company, role, slug, jobDescription: archetype || '' })
-    });
-    const data = await response.json();
-
-    if (data.success) {
-      setStatus({
-        type: 'success',
-        message: `${data.type || id} generated`,
-        downloadUrl: data.downloadUrl
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company, role, slug, jobDescription: archetype || '' })
       });
-    } else {
-      setStatus({ type: 'error', message: data.error || 'Generation failed' });
-    }
+      const data = await resolveWorkloadResponse(response, {
+        onProgress: job => {
+          if (job.status === 'queued' || job.status === 'running') {
+            setStatus({ type: 'info', message: `Generating ${id} (${job.status})...` });
+          }
+        }
+      });
 
-    setBusyAction(null);
+      if (data.success) {
+        setStatus({
+          type: 'success',
+          message: `${data.type || id} generated`,
+          downloadUrl: data.downloadUrl
+        });
+      } else {
+        setStatus({ type: 'error', message: data.error || 'Generation failed' });
+      }
+    } catch (error) {
+      setStatus({ type: 'error', message: error.message });
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   return (
