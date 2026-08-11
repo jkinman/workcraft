@@ -3,11 +3,12 @@
 
 const fs = require('fs');
 const path = require('path');
-const playwright = require('playwright');
 const CONFIG = require('./config');
 const { parseCV, parseCVContent } = require('./cv-parser');
 const { renderMarkdownToHtml } = require('./report-parser');
 const { LOGO_BASE64 } = require('./logo-base64');
+const { renderHtmlToPdf, renderHtmlStringToPdfBuffer } = require('./lib/documents-bridge');
+const { loadDashboardProfile } = require('./lib/profile-bridge');
 
 // ─── SHARED UTILS ───────────────────────────────────────────────────────────
 
@@ -23,44 +24,14 @@ function defaultProfile() {
   };
 }
 
-function parseProfileContent(content) {
-  const defaultProfile = {
-    full_name: 'Career-Ops Candidate',
-    email: '',
-    phone: '',
-    location: '',
-    linkedin: '',
-    portfolio_url: '',
-    github: ''
-  };
-  const profile = { ...defaultProfile };
-  const candidateMatch = content.match(/candidate:\s*\n((?:\s+\w+:\s*.*\n)+)/);
-  if (candidateMatch) {
-    const section = candidateMatch[1];
-    const extract = (key) => {
-      const m = section.match(new RegExp(`${key}:\s*"?([^"\n]+)"?`));
-      return m ? m[1].trim() : null;
-    };
-    profile.full_name = extract('full_name') || profile.full_name;
-    profile.email = extract('email') || profile.email;
-    profile.phone = extract('phone') || profile.phone;
-    profile.location = extract('location') || profile.location;
-    profile.linkedin = extract('linkedin') || profile.linkedin;
-    profile.portfolio_url = extract('portfolio_url') || profile.portfolio_url;
-    profile.github = extract('github') || profile.github;
-  }
-  return profile;
-}
-
-function loadProfile(dataClient) {
+async function loadProfile(dataClient) {
   if (dataClient) {
     const content = dataClient.readProfile();
-    return content ? parseProfileContent(content) : defaultProfile();
+    return content ? loadDashboardProfile(content) : defaultProfile();
   }
-
   const profilePath = path.join(CONFIG.CAREER_OPS_PATH, 'config', 'profile.yml');
   if (!fs.existsSync(profilePath)) return defaultProfile();
-  return parseProfileContent(fs.readFileSync(profilePath, 'utf8'));
+  return loadDashboardProfile(fs.readFileSync(profilePath, 'utf8'));
 }
 
 function loadCv(dataClient) {
@@ -100,36 +71,27 @@ function extractKeywords(jobDescription) {
 }
 
 async function htmlToPDF(html, outputPath, format) {
-  const browser = await playwright.chromium.launch();
-  const page = await browser.newPage();
-  await page.setContent(html, { waitUntil: 'networkidle' });
-  await page.pdf({
-    path: outputPath,
-    format: format.format === 'letter' ? 'Letter' : 'A4',
-    printBackground: true,
-    margin: { top: '0.5in', right: '0.5in', bottom: '0.5in', left: '0.5in' }
+  await renderHtmlToPdf(html, outputPath, {
+    format: format.format,
+    updateIndex: false,
+    quiet: true,
   });
-  await browser.close();
   return outputPath;
 }
 
 async function htmlToPDFBuffer(html, format) {
-  const browser = await playwright.chromium.launch();
-  const page = await browser.newPage();
-  await page.setContent(html, { waitUntil: 'networkidle' });
-  const buffer = await page.pdf({
-    format: format.format === 'letter' ? 'Letter' : 'A4',
-    printBackground: true,
-    margin: { top: '0.5in', right: '0.5in', bottom: '0.5in', left: '0.5in' }
+  const result = await renderHtmlStringToPdfBuffer(html, {
+    format: format.format,
+    updateIndex: false,
+    quiet: true,
   });
-  await browser.close();
-  return buffer;
+  return result.pdfBuffer;
 }
 
 async function writePDFOutput(html, filename, format, dataClient) {
   if (dataClient) {
     const buffer = await htmlToPDFBuffer(html, format);
-    dataClient.writeOutputFile(filename, buffer);
+    await dataClient.writeOutputFile(filename, buffer);
     return dataClient.resolveOutputPath(filename);
   }
 
@@ -336,6 +298,13 @@ body {
 .job-bullets li {
   margin-bottom: 2px;
   line-height: 1.4;
+}
+
+.job-tech {
+  font-size: 8.5px;
+  color: var(--primary-dim);
+  margin-top: 4px;
+  letter-spacing: 0.02em;
 }
 
 /* Skills */
@@ -637,19 +606,32 @@ function buildResumeHTML(cv, profile, keywords, company, role, format) {
     summary += ` Seeking to bring 20+ years of engineering expertise to ${company} as ${role}.`;
   }
 
+  // Aggregate the per-job technologies as a fallback when the dedicated Skills
+  // section is empty (common after a fresh resume import).
+  const experienceTech = [];
+  for (const exp of cv.experience) {
+    for (const tech of exp.technologies || []) {
+      if (!experienceTech.includes(tech)) experienceTech.push(tech);
+    }
+  }
+
   // Competencies
   const allSkills = [
     ...cv.skills.frontend, ...cv.skills.backend, ...cv.skills.cloud,
     ...cv.skills.data, ...cv.skills.architecture
   ];
-  const competenciesHtml = allSkills.slice(0, 12).map(k => {
+  const competencyItems = (allSkills.length ? allSkills : experienceTech).slice(0, 16);
+  const competenciesHtml = competencyItems.map(k => {
     const isHighlight = matchedKeywords.has(k.toLowerCase());
     return `<span class="competency-tag ${isHighlight ? 'highlight' : ''}">${k}</span>`;
   }).join('');
 
-  // Experience
+  // Experience — render every achievement plus the recovered tech stack.
   const experienceHtml = cv.experience.map(exp => {
-    const bullets = exp.highlights.slice(0, 2).map(h => `<li>${h}</li>`).join('');
+    const bullets = (exp.highlights || []).map(h => `<li>${h}</li>`).join('');
+    const tech = (exp.technologies || []).length
+      ? `<div class="job-tech">${exp.technologies.join(' · ')}</div>`
+      : '';
     return `
     <div class="job">
       <div class="job-header">
@@ -658,12 +640,13 @@ function buildResumeHTML(cv, profile, keywords, company, role, format) {
       </div>
       <div class="job-role">${exp.role}</div>
       ${exp.description ? `<div class="job-desc">${exp.description}</div>` : ''}
-      <ul class="job-bullets">${bullets}</ul>
+      ${bullets ? `<ul class="job-bullets">${bullets}</ul>` : ''}
+      ${tech}
     </div>`;
   }).join('');
 
-  // Skills grid
-  const skillsHtml = Object.entries(cv.skills)
+  // Skills grid — fall back to aggregated experience tech when empty.
+  let skillsHtml = Object.entries(cv.skills)
     .filter(([_, items]) => items.length > 0)
     .map(([cat, items]) => `
       <div class="skill-category">
@@ -671,6 +654,13 @@ function buildResumeHTML(cv, profile, keywords, company, role, format) {
         <div class="skill-items">${items.join(' • ')}</div>
       </div>
     `).join('');
+  if (!skillsHtml && experienceTech.length) {
+    skillsHtml = `
+      <div class="skill-category">
+        <div class="skill-category-name">Technologies</div>
+        <div class="skill-items">${experienceTech.join(' • ')}</div>
+      </div>`;
+  }
 
   // Strengths
   const strengthsHtml = cv.strengths.slice(0, 5).map(s => `<li>${s}</li>`).join('');
@@ -1162,6 +1152,8 @@ module.exports = {
   generateEvalReportPDF,
   generateFullEvalReportPDF,
   generatePDFBundle,
+  detectFormat,
+  extractKeywords,
   // Also export for direct use
   buildResumeHTML,
   buildCoverLetterHTML,

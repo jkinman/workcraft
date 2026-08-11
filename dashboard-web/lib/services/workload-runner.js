@@ -1,17 +1,18 @@
 const { createTenantCliRunner } = require('./tenant-cli-runner');
+const { runPdf } = require('./pdf-service');
 
 function parseMetric(text, pattern) {
   return parseInt(text.match(pattern)?.[1] || '0', 10);
 }
 
-function createLocalWorkloadRunner(dataClient) {
+function createLocalWorkloadRunner(dataClient, evaluationService, reportService) {
   const cli = createTenantCliRunner(dataClient);
 
   return {
     ...cli,
 
     async runScan({ dryRun = false, deepDive = false } = {}) {
-      const args = [];
+      const args = ['--json'];
       if (dryRun) args.push('--dry-run');
       if (deepDive) args.push('--deep-dive');
 
@@ -20,63 +21,114 @@ function createLocalWorkloadRunner(dataClient) {
         maxBuffer: 1024 * 1024
       });
 
+      const { extractWorkerScanMetrics } = await import('../../../lib/discovery/scan-result.mjs');
+      const metrics = extractWorkerScanMetrics(stdout);
+
       return {
-        mode: 'local-cli',
+        mode: 'local-inline',
         status: 'completed',
         dryRun,
         deepDive,
-        companies: parseMetric(stdout, /Companies scanned:\s+(\d+)/),
-        tasks: parseMetric(stdout, /Tasks run:\s+(\d+)/),
-        totalFound: parseMetric(stdout, /Total jobs found:\s+(\d+)/),
-        newOffers: parseMetric(stdout, /New offers added:\s+(\d+)/),
+        metricsSource: metrics.source,
+        companies: metrics.companies,
+        tasks: metrics.tasks,
+        totalFound: metrics.totalFound,
+        newOffers: metrics.newOffers,
+        elapsedMs: metrics.elapsedMs,
+        scanResult: metrics.scanResult,
         output: stdout.slice(-2000)
       };
     },
 
-    async enqueuePdf(payload) {
+    async enqueuePdf(payload = {}) {
+      const result = await runPdf(payload, { dataClient, reports: reportService });
       return {
         mode: 'local-inline',
-        status: 'inline-required',
-        payload
+        status: result.success ? 'completed' : 'failed',
+        jobType: 'pdf',
+        result,
+        ...(result.success ? {} : { error: result.error }),
       };
-    }
+    },
+
+    async runPdf(payload = {}) {
+      return this.enqueuePdf(payload);
+    },
+
+    async enqueueEvaluation(payload, options = {}) {
+      const result = await evaluationService.run(payload, options);
+      return {
+        mode: 'local-inline',
+        status: result.success ? 'completed' : 'failed',
+        jobType: 'evaluation',
+        result,
+        ...(result.success ? result : { error: result.error }),
+      };
+    },
+
+    async runEvaluation(payload, options = {}) {
+      return this.enqueueEvaluation(payload, options);
+    },
   };
 }
 
-function createHostedWorkloadRunner(tenantContext) {
+function createHostedWorkloadRunner(tenantContext, jobsRepository) {
+  if (!jobsRepository) {
+    throw new Error('Hosted workload runner requires a BackgroundJobsRepository');
+  }
+
+  async function persistJob(jobType, payload) {
+    const job = await jobsRepository.enqueue(tenantContext.tenantId, jobType, payload);
+    return {
+      mode: 'hosted-job',
+      jobId: job.jobId,
+      status: job.status,
+      jobType: job.jobType,
+      pollUrl: job.pollUrl
+    };
+  }
+
   return {
     async runScan(options = {}) {
       return this.enqueueScan(options);
     },
 
     async enqueueScan(options = {}) {
-      return {
-        mode: 'hosted-job',
-        status: 'queued',
-        jobType: 'scan',
-        tenantId: tenantContext.tenantId,
-        options
+      const payload = {
+        dryRun: Boolean(options.dryRun),
+        deepDive: Boolean(options.deepDive)
       };
+      return persistJob('scan', payload);
     },
 
     async enqueuePdf(payload = {}) {
-      return {
-        mode: 'hosted-job',
-        status: 'queued',
-        jobType: 'pdf',
-        tenantId: tenantContext.tenantId,
-        payload
-      };
-    }
+      return persistJob('pdf', payload);
+    },
+
+    async runPdf(payload = {}) {
+      return this.enqueuePdf(payload);
+    },
+
+    async enqueueEvaluation(payload = {}) {
+      return persistJob('evaluation', payload);
+    },
+
+    async runEvaluation(payload = {}) {
+      return this.enqueueEvaluation(payload);
+    },
   };
 }
 
-function createWorkloadRunner(dataClient, tenantContext = {}) {
+function createWorkloadRunner(dataClient, tenantContext = {}, jobsRepository = null, evaluationService = null, reportService = null) {
   if (tenantContext.mode === 'hosted') {
-    return createHostedWorkloadRunner(tenantContext);
+    return createHostedWorkloadRunner(tenantContext, jobsRepository);
   }
 
-  return createLocalWorkloadRunner(dataClient);
+  if (!evaluationService || !reportService) {
+    throw new Error('Local workload runner requires evaluation and report services');
+  }
+
+  return createLocalWorkloadRunner(dataClient, evaluationService, reportService);
 }
 
 module.exports = {

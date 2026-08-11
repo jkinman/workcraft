@@ -28,11 +28,17 @@ function resolveCareerOpsPath() {
 }
 
 const CONFIG = {
-  PORT: process.env.PORT || 3000,
-  CAREER_OPS_PATH: resolveCareerOpsPath(),
+  get PORT() {
+    return process.env.PORT || 3000;
+  },
+  get CAREER_OPS_PATH() {
+    return resolveCareerOpsPath();
+  },
   DATA_DIR: 'data',
   PIPELINE_FILE: 'pipeline.md',
-  DASHBOARD_URL: process.env.DASHBOARD_URL || `http://localhost:${process.env.PORT || 3000}`
+  get DASHBOARD_URL() {
+    return process.env.DASHBOARD_URL || `http://localhost:${this.PORT}`;
+  }
 };
 
 module.exports = CONFIG;

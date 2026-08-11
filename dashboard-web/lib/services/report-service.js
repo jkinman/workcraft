@@ -1,4 +1,4 @@
-const { parseReport, renderMarkdownToHtml, slugify } = require('../../report-parser');
+const { renderMarkdownToHtml } = require('../reports-bridge');
 
 function sortReportFiles(files) {
   return [...files].sort((a, b) => {
@@ -21,7 +21,12 @@ function rankEvaluations(evaluations) {
   return ranked;
 }
 
-function createReportService(dataClient) {
+function createReportService(dataClient, reportsModule = global.__careerOpsReports) {
+  if (!reportsModule) {
+    throw new Error('Report parser not initialized. Load services through tenant-services first.');
+  }
+  const { parseReport, slugify } = reportsModule;
+
   function listEvaluations() {
     const evaluations = [];
 

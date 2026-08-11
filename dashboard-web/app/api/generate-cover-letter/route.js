@@ -1,21 +1,16 @@
 import tenantServices from '../../../lib/tenant-services';
-import validation from '../../../lib/api/validation';
-import pdfBundle from '../../../pdf-bundle-generator';
+import pdfRoute from '../../../lib/api/pdf-route';
 
 const { getTenantServices } = tenantServices;
-const { jsonError, requireString } = validation;
-const { generateCoverLetterPDF } = pdfBundle;
+const { handlePdfRequest, requireCompanyRole } = pdfRoute;
 
 export async function POST(request) {
-  const { services } = getTenantServices(request);
-  const body = await request.json().catch(() => ({}));
+  const { tenant, services } = await getTenantServices(request);
 
-  try {
-    const company = requireString(body.company, 'company');
-    const role = requireString(body.role, 'role');
-    const result = await generateCoverLetterPDF(company, role, body.jobDescription || '', { dataClient: services.dataClient });
-    return Response.json(result, { status: result.success ? 200 : 500 });
-  } catch (error) {
-    return jsonError(error.message, 400);
-  }
+  return handlePdfRequest(request, services, tenant, {
+    buildPayload(body) {
+      const { company, role, jobDescription } = requireCompanyRole(body);
+      return { kind: 'cover-letter', company, role, jobDescription };
+    },
+  });
 }

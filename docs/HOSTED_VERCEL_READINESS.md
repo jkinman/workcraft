@@ -1,10 +1,12 @@
 # Hosted Vercel Readiness
 
-This document captures the target architecture for moving Career-Ops from a local filesystem and command-driven app to a hosted Vercel app. The hosted product model is single-user: each Clerk user owns one private job-search workspace with their own CV, profile, search criteria, queue, reports, and generated files.
+This document describes the hosted Career-Ops architecture: what is implemented today (MVP), what remains before a real deployment, and the longer-term normalized schema. The hosted product model is single-user: each Clerk user owns one private job-search workspace with their own CV, profile, search criteria, queue, reports, and generated files.
 
-## Architecture Decision
+**Status:** MVP plumbing is in place (Clerk boundary, Supabase repository, background job queue, worker script, contract tests). This is not production-ready. Live hosted end-to-end validation against real Supabase, Clerk, Vercel, and a long-running worker has not been completed.
 
-Use these defaults for the hosted app:
+## Architecture Decisions
+
+These defaults still apply:
 
 | Area | Decision | Rationale |
 |------|----------|-----------|
@@ -13,266 +15,356 @@ Use these defaults for the hosted app:
 | App host | Vercel | Fits the interactive Next dashboard and API trigger layer |
 | Structured data | Postgres | Durable, queryable source of truth for queue, applications, reports, profile, and scan state |
 | File storage | Object storage | PDFs and larger user artifacts should not live in Vercel function storage |
-| Background work | External job runner or worker | Scans, deep dives, liveness checks, and PDFs are too long or browser-heavy for normal request paths |
+| Background work | External worker process | Scans, deep dives, and PDFs are too long or browser-heavy for normal request paths |
 | Local development | Existing filesystem repository | Keeps the open-source/local workflow working while hosted storage is added |
 
-Recommended provider pairings:
+Recommended provider pairings for a full production stack:
 
-- Clerk + Neon + Vercel Blob + Inngest.
-- Clerk + Supabase Postgres + Supabase Storage + Trigger.dev.
-- Clerk + RDS/Neon + S3/R2 + a small container worker.
+- Clerk + Neon + Vercel Blob + Inngest
+- Clerk + Supabase Postgres + Supabase Storage + a container worker (current MVP path)
+- Clerk + RDS/Neon + S3/R2 + a small container worker
 
-The first option is the most Vercel-native. The third option gives the most control if scan and browser workloads grow.
+The Supabase path matches the current implementation. A third-party queue (Inngest, Trigger.dev) remains optional; the MVP uses Postgres `background_jobs` with lease-safe RPCs.
 
-## Target Flow
+## Current MVP Architecture (Implemented)
+
+The hosted path reuses the same app-facing contract as local mode. Routes call `getTenantServices` / `getTenantDashboardModel`; services select storage and workload behavior from `CAREER_OPS_TENANT_MODE`.
 
 ```mermaid
 flowchart TD
-  User["User"] --> Clerk["Clerk Auth"]
-  Clerk --> TenantContext["Tenant Context from Clerk userId"]
-  TenantContext --> TenantServices["Tenant Services"]
-  TenantServices --> DataClient["CareerOpsDataClient"]
-  DataClient --> Postgres["Postgres"]
-  DataClient --> BlobStorage["Object Storage"]
-  TenantServices --> JobApi["Job Trigger APIs"]
-  JobApi --> JobQueue["Background Job Queue"]
-  JobQueue --> Worker["Scan and PDF Worker"]
-  Worker --> Postgres
-  Worker --> BlobStorage
+  User["User"] --> Clerk["Clerk Auth (proxy.js)"]
+  Clerk --> ClerkRequest["getAuthenticatedTenantRequest"]
+  ClerkRequest --> TenantContext["getTenantContext"]
+  TenantContext --> TenantServices["createCareerOpsServices"]
+  TenantServices --> RepoFactory["createRepository"]
+  RepoFactory --> LocalRepo["LocalCareerOpsRepository"]
+  RepoFactory --> SupaRepo["SupabaseRepository"]
+  SupaRepo --> TenantDocs["tenant_documents (Postgres)"]
+  SupaRepo --> Storage["Supabase Storage bucket"]
+  TenantServices --> WorkloadRunner["createWorkloadRunner"]
+  WorkloadRunner --> LocalCli["local: scan.mjs + inline PDF"]
+  WorkloadRunner --> HostedJobs["hosted: BackgroundJobsRepository"]
+  HostedJobs --> Worker["run-worker.mjs (separate process)"]
+  Worker --> TenantDocs
+  Worker --> Storage
+  Worker --> ScanScript["root scan.mjs via CAREER_OPS_DATA_ROOT"]
+  Worker --> Playwright["pdf-bundle-generator (Playwright)"]
 ```
+
+### Mode switch
+
+| Variable | `local-dev` (default) | `hosted` |
+|----------|-------------------------|----------|
+| `CAREER_OPS_TENANT_MODE` | Filesystem under `CAREER_OPS_PATH` | Supabase Postgres + Storage |
+| Auth | Optional (`x-tenant-id`, env, default tenant) | Clerk required in production |
+| Scan / PDF APIs | Inline (`child_process` / Playwright in request) | Enqueue job, HTTP `202`, client polls |
+| Job status API | Returns `404` ("unavailable in local mode") | Tenant-scoped poll |
+
+Consolidated in commits `cc5f22c` (repository unification) and `b03471b` (durable job queue).
+
+## Future Normalized Schema (Not Implemented)
+
+The MVP stores tenant text as path-keyed rows in `tenant_documents` and binaries in object storage. A future phase can normalize into typed tables without changing route contracts:
+
+| Table | Current MVP source | Notes |
+|-------|-------------------|-------|
+| `users` | Clerk user | Mirror Clerk id, email, timestamps |
+| `user_profiles` | `config/profile.yml` in `tenant_documents` | Parsed YAML as JSON |
+| `user_agent_profiles` | `modes/_profile.md` | Per-user narrative and archetypes |
+| `search_configs` | `portals.yml` | Drives scan jobs |
+| `documents` | `cv.md`, interview docs, etc. | Typed markdown with slug |
+| `pipeline_items` | `data/pipeline.md` | URL inbox rows |
+| `applications` | `data/applications.md` | Tracker with canonical status |
+| `evaluations` | `reports/*.md` | Parsed metadata plus body |
+| `evaluation_state_events` | report frontmatter history | Workflow audit trail |
+| `job_descriptions` | `jds/*` | Saved JDs |
+| `scan_events` | `data/scan-history.tsv` | Dedup by `(user_id, url)` |
+| `scan_runs` | scanner stdout / job results | Run-level counters |
+| `follow_ups` | `data/follow-ups.md` | Follow-up cadence |
+| `generated_files` | `output/*.pdf` metadata | Storage key, MIME, size, related entity |
+
+Repo/system files (`modes/*` except `_profile.md`, `templates/*`, root scripts, `templates/states.yml`) remain deploy-time assets, not per-user records.
 
 ## Route And Runtime Inventory
 
-Active Next entrypoints should be treated as the hosted product surface. The Express server is legacy-only.
+Express server is legacy-only (`dashboard-web/LEGACY.md`). Active Next.js surface:
 
-| Route | Type | Auth | Current runtime | Hosted target |
-|-------|------|------|-----------------|---------------|
-| `/` | Dashboard page | Required | Reads reports and pipeline through tenant services | Read Postgres-backed dashboard model |
-| `/queue` | Queue page | Required | Reads queue stats, posts to `/api/queue` | Read DB queue state |
-| `/scan` | Scan page | Required | Reads scan history and report stats | Read scan/job status from DB |
-| `/job/[slug]` | Job detail page | Required | Reads report markdown and state | Read evaluation row plus markdown body |
-| `/api/queue` | Mutation API | Required | Writes `data/pipeline.md` | Insert `pipeline_items` row |
-| `/api/transition-state` | Mutation API | Required | Rewrites report frontmatter | Update evaluation workflow state and state history |
-| `/api/scan` | Background trigger | Required | Runs `node scan.mjs` through `child_process` | Enqueue scan job and return job id |
-| `/api/generate-resume` | Background trigger | Required | Runs Playwright in request | Enqueue PDF job |
-| `/api/generate-cover-letter` | Background trigger | Required | Runs Playwright in request | Enqueue PDF job |
-| `/api/generate-eval-report` | Background trigger | Required | Runs Playwright in request | Enqueue PDF job |
-| `/api/generate-full-eval` | Background trigger | Required | Runs Playwright in request | Enqueue PDF job |
-| `/download-pdf` | File access | Required | Reads tenant `output/*.pdf` | Authorize metadata row, stream/signed URL from object storage |
-| `/api/health` | System route | Public | Stateless JSON | Keep public and stateless |
+| Route | Type | Auth | Local runtime | Hosted runtime |
+|-------|------|------|---------------|----------------|
+| `/` | Dashboard | Required when Clerk configured | Filesystem via `LocalCareerOpsRepository` | `tenant_documents` + Storage |
+| `/queue` | Queue page | Required | Reads/writes `data/pipeline.md` | Same paths in `tenant_documents` |
+| `/scan` | Scan page | Required | Reads scan history from filesystem | Reads from `tenant_documents`; polls jobs after trigger |
+| `/job/[slug]` | Job detail | Required | Report markdown from filesystem | Report path in `tenant_documents` |
+| `/manage`, `/manage/profile`, `/manage/resume`, `/manage/search`, `/manage/strategy` | Settings UI | Required | Filesystem | `tenant_documents` |
+| `/api/queue` | Mutation | Required | Writes pipeline file | Upserts `data/pipeline.md` row |
+| `/api/transition-state` | Mutation | Required | Rewrites report frontmatter | Upserts report in `tenant_documents` |
+| `/api/scan` | Workload trigger | Required | Runs `scan.mjs` inline (`child_process`) | Enqueues `scan` job, HTTP `202` |
+| `/api/generate-resume` | Workload trigger | Required | Playwright inline | Enqueues `pdf` job (`kind: resume`), HTTP `202` |
+| `/api/generate-cover-letter` | Workload trigger | Required | Playwright inline | Enqueues `pdf` job (`kind: cover-letter`), HTTP `202` |
+| `/api/generate-eval-report` | Workload trigger | Required | Playwright inline | Enqueues `pdf` job (`kind: eval-report`), HTTP `202` |
+| `/api/generate-full-eval` | Workload trigger | Required | Playwright inline | Enqueues `pdf` job (`kind: full-eval`), HTTP `202` |
+| `/api/jobs/[jobId]` | Job status | Required | `404` (not available) | Tenant-filtered poll; cross-tenant returns `404` |
+| `/api/manage/*`, `/api/setup`, `/api/onboarding` | Settings/onboarding | Required | Filesystem | `tenant_documents` |
+| `/download-pdf` | File access | Required | Reads tenant `output/*.pdf` | Streams from Storage via repository |
+| `/api/health` | System | Public | Stateless JSON | Same |
 
-Hosted blockers found in the active path:
+Client polling for hosted jobs: `dashboard-web/lib/client/job-polling.js` (used by `ScanControls`, `JobActions`, `ResumeForm`).
 
-- `dashboard-web/app/api/scan/route.js` shells out through `dashboard-web/lib/services/tenant-cli-runner.js`.
-- `dashboard-web/pdf-bundle-generator.js` launches Playwright directly.
-- `dashboard-web/lib/repositories/local-career-ops-repository.js` persists user data with synchronous filesystem calls.
-- `dashboard-web/lib/services/scan-service.js` reads scan history, pipeline, and reports from the current data client, which is still filesystem-backed.
-- `dashboard-web/lib/tenant-context.js` has an auth placeholder but no Clerk integration.
+## Clerk Boundary (Implemented)
 
-## Data And Storage Map
+Clerk is the trusted production source of tenant identity when keys are configured.
 
-The current user layer should move to Postgres and object storage while system files stay in the repo.
-
-### Postgres Tables
-
-| Table | Current source | Notes |
-|-------|----------------|-------|
-| `users` | Clerk user | Store `clerk_user_id`, email, timestamps |
-| `user_profiles` | `config/profile.yml` | Store parsed YAML as JSON first; normalize later only if needed |
-| `user_agent_profiles` | `modes/_profile.md` | Per-user narrative, archetypes, negotiation guidance |
-| `search_configs` | `portals.yml` | Store parsed YAML as JSON; drives scan jobs |
-| `documents` | `cv.md`, `article-digest.md`, interview docs | Store markdown text with `type` and optional slug |
-| `pipeline_items` | `data/pipeline.md` | URL inbox and queue status |
-| `applications` | `data/applications.md` | Tracker rows and canonical status |
-| `evaluations` | `reports/*.md` | Parsed metadata plus markdown body |
-| `evaluation_state_events` | report frontmatter history | Optional separate event table for workflow history |
-| `job_descriptions` | `jds/*` | Raw or saved JDs tied to pipeline/evaluation records |
-| `scan_events` | `data/scan-history.tsv` | Unique by `(user_id, url)` for scanner dedup |
-| `scan_runs` | scanner execution output | Job/run status, counts, errors, started/finished timestamps |
-| `follow_ups` | `data/follow-ups.md` | Follow-up dates, channel, notes |
-| `generated_files` | `output/*.pdf` metadata | Storage key, filename, MIME, size, type, related entity |
-| `background_jobs` | none today | Job type, status, payload, result, error |
-
-### Object Storage
-
-| Asset | Key pattern | Metadata table |
-|-------|-------------|----------------|
-| Generated PDFs | `users/{clerkUserId}/output/{fileId}.pdf` | `generated_files` |
-| Uploaded/source CV files | `users/{clerkUserId}/documents/cv/{fileId}` | `documents` or `generated_files` |
-| Optional generated HTML | `users/{clerkUserId}/tmp/{jobId}.html` | `background_jobs`, short TTL |
-
-### Repo/System Files
-
-These remain deploy-time system assets, not user records:
-
-- `modes/*`, except per-user `modes/_profile.md`.
-- `templates/*`.
-- `fonts/*`.
-- root scripts and reusable scanner/evaluation logic.
-- `templates/states.yml`.
-- docs and agent skills.
-
-### Data Client Coverage Gaps
-
-`CareerOpsDataClient` already covers most user-layer files. Before the hosted repository is complete, add coverage for:
-
-- `modes/_profile.md`.
-- `interview-prep/{company}-{role}.md`, not only `story-bank.md`.
-- batch tracker additions, which should become DB inserts or job events instead of staged TSV files.
-
-## Clerk Boundary Design
-
-Clerk should become the only trusted production source of tenant identity.
-
-Target behavior:
-
-- Middleware protects all active product pages and APIs except `/api/health` and Clerk/public auth routes.
-- Tenant identity is `auth().userId`.
-- `x-tenant-id` remains available only for local development and tests.
-- Production fails closed if Clerk does not provide a user id.
-- The active app continues to call `getTenantServices` and `getTenantDashboardModel` so tenant resolution stays centralized.
-
-Implementation shape:
+- **Middleware:** `dashboard-web/proxy.js` wraps `@clerk/nextjs/server` `clerkMiddleware`. Protects all routes except `/api/health`. If Clerk keys are absent, middleware is a no-op (local dev).
+- **Request adapter:** `getAuthenticatedTenantRequest` (`lib/auth/clerk-request.js`) calls `auth()` and maps `userId` to `{ auth: { tenantId: userId } }` via `clerkAuthToTenantRequest`.
+- **Tenant resolution:** `getTenantContext` prefers auth tenant, then (non-production) `x-tenant-id` when allowed, then `CAREER_OPS_TENANT_ID`, then `local-dev`. In `hosted` + production, missing auth fails closed.
+- **Central entry:** Pages and APIs use `getTenantServices` / `getTenantDashboardModel`; route code does not call Clerk directly.
 
 ```mermaid
 flowchart TD
-  Request["Incoming request"] --> ClerkMiddleware["Clerk middleware"]
-  ClerkMiddleware --> AuthAdapter["Clerk auth adapter"]
-  AuthAdapter --> TenantContext["getTenantContext with auth tenant"]
+  Request["Incoming request"] --> Proxy["proxy.js (Clerk middleware)"]
+  Proxy --> Route["Page or API route"]
+  Route --> ClerkRequest["getAuthenticatedTenantRequest"]
+  ClerkRequest --> TenantContext["getTenantContext"]
   TenantContext --> TenantServices["getTenantServices"]
-  TenantServices --> DataClient["CareerOpsDataClient"]
 ```
 
-Suggested adapter contract:
+Dev escape hatches (not for production): `CAREER_OPS_ALLOW_DEV_TENANT_HEADER=true`, `CAREER_OPS_TENANT_ID`, or running without Clerk keys.
+
+## Repository Model (Implemented)
+
+Storage is selected by `createRepository` (`lib/repositories/repository-factory.js`):
+
+| Implementation | When | Text | Binary (PDFs) |
+|----------------|------|------|---------------|
+| `LocalCareerOpsRepository` | `CAREER_OPS_TENANT_MODE=local-dev` | Sync filesystem under `CAREER_OPS_PATH` (or `tenants/{id}/`) | Local `output/` |
+| `SupabaseRepository` | `CAREER_OPS_TENANT_MODE=hosted` | `tenant_documents` table, in-memory cache per request | Supabase Storage bucket |
+
+Both implement the same path-key contract consumed by `CareerOpsDataClient` (`lib/data/career-ops-data-client.js`). Logical paths mirror the local layout (`config/profile.yml`, `data/pipeline.md`, `reports/*.md`, `output/*.pdf`, etc.).
+
+Contract tests: `dashboard-web/test/repository-contract.test.js` (fake Supabase client + local temp dir).
+
+## Current Data Schema
+
+Schema file: `dashboard-web/supabase/schema.sql`. Apply manually in the Supabase SQL editor (no migration runner yet).
+
+### `tenant_documents`
+
+Path-keyed text store for all markdown, YAML, TSV, and JSON tenant files.
+
+```sql
+tenant_id  text        not null
+path       text        not null   -- e.g. config/profile.yml, reports/042-acme-2026-01-01.md
+content    text        not null default ''
+updated_at timestamptz not null default now()
+primary key (tenant_id, path)
+```
+
+Index: `(tenant_id, path)` for prefix scans.
+
+### `background_jobs`
+
+Durable queue for hosted scan and PDF workloads.
+
+```sql
+id           uuid primary key
+tenant_id    text not null
+job_type     text not null   -- 'scan' | 'pdf'
+status       text not null   -- 'queued' | 'running' | 'completed' | 'failed'
+payload      jsonb
+result       jsonb
+error        text
+worker_id    text
+claimed_at   timestamptz
+completed_at timestamptz
+created_at   timestamptz
+updated_at   timestamptz
+```
+
+RPCs (race-safe claiming):
+
+- `claim_next_background_job(p_worker_id, p_stale_seconds)` -- reclaims stale `running` rows, claims oldest `queued`
+- `reclaim_stale_background_jobs(p_stale_seconds)`
+
+Repository: `lib/repositories/background-jobs-repository.js`.
+
+### Object storage key convention
 
 ```js
-function getClerkTenantContext() {
-  const { userId } = auth();
-  if (!userId) throw new Error('Authentication required');
-  return { auth: { tenantId: userId } };
-}
+// lib/repositories/storage-keys.js
+`${tenantId}/${relPath}`   // e.g. local-dev/output/resume-acme.pdf
 ```
 
-The exact API will depend on the installed Clerk Next.js version, but the important boundary is that route/page code passes a trusted auth tenant into the existing tenant context resolver.
+Bucket: `SUPABASE_STORAGE_BUCKET` (default `career-ops-files`). PDFs use logical path `output/{filename}.pdf`. Upload content-type: `application/pdf`.
 
-## Repository Migration Design
+### Service role and RLS
 
-Keep the app-facing API stable and swap storage behind it.
+Both tables have RLS **enabled** but the app and worker use the **service role key**, which bypasses RLS. There are no user-scoped policies tied to Clerk JWTs yet. All tenant isolation is enforced in application code (`tenant_id` filters on every query). Adding Clerk JWT policies is a future hardening step; until then, never expose the service role key to the client.
 
-Current local flow:
+## Background Job Flow (Implemented)
 
-```mermaid
-flowchart TD
-  App["Next route or page"] --> TenantServices["tenant-services"]
-  TenantServices --> LocalRepository["LocalCareerOpsRepository"]
-  LocalRepository --> LocalFiles["Local tenant files"]
-```
+| Workload | Local | Hosted |
+|----------|-------|--------|
+| Scan | `/api/scan` runs `scan.mjs` via `tenant-cli-runner` | Enqueue `scan`; worker materializes tenant docs, runs `scan.mjs`, syncs artifacts |
+| PDF (resume, cover, eval) | API launches Playwright in-process | Enqueue `pdf` with `kind` + inputs; worker runs `pdf-bundle-generator` |
+| Deep-dive scan | Same inline path with longer timeout | Same queue; worker uses 300s timeout |
+| Liveness checks | Root CLI (Playwright) | Not queued yet |
+| Tracker merge/dedup | File scripts | Still file-oriented in local workflows |
 
-Hosted target:
+**Enqueue response:** `{ mode: 'hosted-job', jobId, status, jobType, pollUrl }` with HTTP `202`.
 
-```mermaid
-flowchart TD
-  App["Next route or page"] --> TenantServices["tenant-services"]
-  TenantServices --> HostedRepository["HostedCareerOpsRepository"]
-  HostedRepository --> Postgres["Postgres"]
-  HostedRepository --> ObjectStorage["Object Storage"]
-```
+**Poll:** `GET /api/jobs/[jobId]` returns normalized job row for the authenticated tenant only.
 
-Migration steps:
+**Worker:** `dashboard-web/scripts/run-worker.mjs` -- separate long-lived process, not a Vercel function.
 
-1. Define a repository contract around the operations actually used by `CareerOpsDataClient`.
-2. Keep `LocalCareerOpsRepository` as the development implementation.
-3. Add `HostedCareerOpsRepository` for Postgres/object storage.
-4. Select repository by environment mode:
-   - `CAREER_OPS_TENANT_MODE=local-dev`: local filesystem.
-   - `CAREER_OPS_TENANT_MODE=hosted`: Clerk user plus hosted persistence.
-5. Add contract tests that run the same data-client behaviors against both implementations where possible.
+- Requires: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+- Env: `WORKER_ID`, `WORKER_POLL_INTERVAL_MS` (default 5000), `WORKER_STALE_SECONDS` (default 900)
+- Commands: `npm run worker` (loop), `npm run worker:once` (single claim)
+- Scan flow: `tenant-materializer.js` writes `portals.yml`, pipeline, scan history, applications to temp dir; runs root `scan.mjs` with `CAREER_OPS_DATA_ROOT`; syncs `data/pipeline.md` and `data/scan-history.tsv` back
+- PDF flow: `SupabaseRepository` + existing generators; payload carries `kind` and inputs only (no tenant override)
 
-Early hosted implementation should prioritize:
-
-1. profile, CV, and search config.
-2. queue and applications.
-3. evaluations and workflow state.
-4. generated files.
-5. scan history and job status.
-6. follow-ups, JDs, interview prep, and less-used documents.
-
-## Background Job Strategy
-
-Hosted request paths should trigger work, not run long local commands.
-
-| Workload | Current behavior | Hosted behavior |
-|----------|------------------|-----------------|
-| Standard scan | `/api/scan` runs `scan.mjs` with `execFile` | enqueue `scan` job, persist status in `background_jobs` and `scan_runs` |
-| Deep-dive scan | scanner can load Playwright scrapers | run only in browser-capable worker |
-| PDF generation | API route launches Playwright and writes output | enqueue `pdf` job, worker writes object storage, API returns job id |
-| Liveness checks | root CLI uses Playwright | worker job, usually scheduled or attached to evaluation flow |
-| Tracker merge/dedup/normalize | file mutation scripts | replace with DB writes and maintenance jobs |
-| Pipeline verification | reads local files | DB integrity checks or admin diagnostics |
-
-Job lifecycle:
+**Worker dependencies:** Full career-ops repo checkout on disk (`CAREER_OPS_PATH` or auto-detected parent), Node, Playwright browsers installed, network egress for portal APIs.
 
 ```mermaid
 flowchart LR
   ApiTrigger["API trigger"] --> JobRow["background_jobs row"]
-  JobRow --> Queue["Queue provider"]
-  Queue --> Worker["Worker"]
-  Worker --> ResultData["DB and object storage result"]
-  ResultData --> StatusApi["Status read API"]
-  StatusApi --> UI["UI updates"]
+  JobRow --> Worker["run-worker.mjs"]
+  Worker --> ResultData["tenant_documents + Storage"]
+  ResultData --> PollApi["GET /api/jobs/jobId"]
+  PollApi --> UI["Client poll + UI update"]
 ```
 
-The root scripts can remain useful for local and agent workflows, but hosted routes should not depend on a writable repo checkout or `child_process`.
+## Remaining Gaps
 
-## Vercel Hardening
+These are the actual open items before calling hosted deployment done. Earlier blockers (Clerk placeholder, filesystem-only repository, inline scan/PDF on hosted routes, missing job queue) are resolved in the MVP.
 
-Before production deploy:
+**Deployment and ops**
 
-- Add Clerk middleware and fail-closed auth behavior.
-- Add hosted environment documentation:
-  - `CLERK_SECRET_KEY`.
-  - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`.
-  - database connection string.
-  - object storage credentials.
-  - job provider signing keys or API keys.
-  - `CAREER_OPS_TENANT_MODE=hosted`.
-- Add Vercel configuration only after scan/PDF work is moved out of request paths.
-- Keep `/api/health` public and stateless.
-- Do not bundle Playwright into normal interactive API functions if PDF generation is handled by a worker.
-- Do not rely on `CAREER_OPS_PATH` for user data in hosted mode.
-- Do not allow production fallback to `local-dev`.
-- Keep `dashboard-web/LEGACY.md` as the boundary for Express-only code.
+- No live hosted E2E run documented (Clerk sign-in, onboarding write, scan enqueue, worker claim, PDF download).
+- `vercel.json` / project Root Directory not committed; Vercel must use `dashboard-web` as root (or equivalent monorepo config).
+- Worker must run outside Vercel (VM, container, Railway, Fly.io, etc.) with repo checkout, Playwright, and env vars.
+- Playwright browser install and headless deps on the worker host.
+- Worker health monitoring, restart policy, and stale-job alerting not built.
+- No CI job that applies `schema.sql` or validates Supabase connectivity.
 
-## Verification Plan
+**Security and tenancy**
 
-Each hosted migration slice should keep the existing quality gate and add focused hosted tests.
+- RLS policies not mapped to Clerk JWT; isolation relies on service-role server code.
+- `generated_files` metadata table absent; download auth is tenant session + filename validation only.
+- No audit log for cross-tenant access attempts.
 
-Baseline:
+**Product and data**
 
-- `npm test` in `dashboard-web`.
-- `npm run build` in `dashboard-web`.
-- lint diagnostics for changed files.
+- Normalized tables (applications rows, pipeline items, evaluation metadata) not extracted from path-keyed documents.
+- Batch tracker TSV flow (`batch/tracker-additions/`) unchanged; hosted should use direct DB writes or job events.
+- Liveness checks, scheduled scans, and maintenance jobs not on the queue.
+- Onboarding for brand-new Clerk users (seed empty workspace) needs hosted validation.
+- Optional filesystem migration (`scripts/migrate-to-supabase.mjs`) copies `tenants/{id}/` layout; mapping local `local-dev` to a Clerk `userId` is manual.
 
-Hosted-specific tests:
+**Vercel-specific**
 
-- Clerk auth adapter resolves tenant from user id.
-- Production rejects unauthenticated tenant resolution.
-- Dev-only `x-tenant-id` still works outside production.
-- Repository contract tests cover local and hosted-style adapters.
-- `/api/scan` and PDF APIs enqueue jobs instead of running local commands in hosted mode.
-- Download authorization checks `generated_files.user_id` before returning object storage content or signed URLs.
+- Request functions must not bundle Playwright (hosted PDF path already avoids this; verify build output).
+- `CAREER_OPS_PATH` still required on the worker for `scan.mjs`, not on Vercel app functions for user data reads.
+- Production must set `CAREER_OPS_TENANT_MODE=hosted`; no silent fallback to filesystem.
 
-## Implementation Order
+## Deployment Runbook
 
-1. Add Clerk dependency, middleware, auth adapter, and tenant tests.
-2. Add database schema and migration tooling.
-3. Add object storage client and `generated_files` metadata flow.
-4. Add hosted repository implementation behind `CareerOpsDataClient`.
-5. Move profile, CV, search config, queue, applications, and evaluations to hosted storage.
-6. Convert scan and PDF routes into job triggers.
-7. Add worker implementation for scan, liveness, and PDF jobs.
-8. Remove or guard hosted use of local filesystem, `child_process`, and direct Playwright.
+### 1. Supabase
 
-## Known Follow-Up Bug
+1. Create a Supabase project.
+2. Run `dashboard-web/supabase/schema.sql` in the SQL editor (creates `tenant_documents`, `background_jobs`, RPCs, enables RLS).
+3. Create a Storage bucket named `career-ops-files` (or set `SUPABASE_STORAGE_BUCKET`).
+4. Copy **Project URL** and **service_role** key (server-only).
 
-`dashboard-web/lib/services/scan-service.js` references `path.basename` without importing `path`. This is separate from the hosted architecture work, but it should be fixed before relying on the scan page with existing report data.
+### 2. Clerk
+
+1. Create a Clerk application.
+2. Copy **Publishable key** and **Secret key**.
+3. Set allowed redirect URLs for the Vercel deployment domain.
+
+### 3. Vercel (Next app)
+
+1. Import the repo; set **Root Directory** to `dashboard-web`.
+2. Set environment variables:
+
+| Variable | Value |
+|----------|-------|
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
+| `CLERK_SECRET_KEY` | Clerk secret key |
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key (never `NEXT_PUBLIC_`) |
+| `SUPABASE_STORAGE_BUCKET` | `career-ops-files` (or your bucket name) |
+| `CAREER_OPS_TENANT_MODE` | `hosted` |
+
+3. Deploy. Confirm `/api/health` is public and sign-in protects other routes.
+
+### 4. Optional data migration
+
+If you have existing local tenant folders under `tenants/{id}/`:
+
+```bash
+cd dashboard-web
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
+  node scripts/migrate-to-supabase.mjs [--tenant <id>] [--dry-run]
+```
+
+Text files (`.md`, `.yml`, `.tsv`, etc.) go to `tenant_documents`; PDFs go to Storage with `{tenantId}/{path}` keys.
+
+### 5. Background worker (separate host)
+
+1. Clone the full career-ops repo (worker needs root `scan.mjs`, `templates/`, etc.).
+2. Install dependencies in `dashboard-web` and root as needed; install Playwright browsers.
+3. Set env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `WORKER_ID`, optional poll/stale vars, `CAREER_OPS_PATH` if auto-detect fails.
+4. Run: `cd dashboard-web && npm run worker` (or `worker:once` for testing).
+5. Keep the process supervised (systemd, Docker, platform worker).
+
+Do not deploy the worker as a Vercel serverless function.
+
+## Verification Checklist
+
+### Automated (run locally)
+
+```bash
+cd dashboard-web
+npm test
+npm run build
+```
+
+Existing hosted-related tests:
+
+- `test/clerk-request.test.js` -- auth adapter
+- `test/tenant-context.test.js` -- fail-closed hosted/production
+- `test/repository-contract.test.js` -- local vs Supabase repository parity
+- `test/repository-factory.test.js` -- mode selection
+- `test/background-jobs-repository.test.js` -- enqueue, claim, complete, fail
+- `test/workload-runner.test.js` -- local vs hosted branching
+- `test/hosted-workload.test.js` -- API enqueue paths
+- `test/job-executor.test.js` -- scan/PDF executor wiring
+- `test/job-polling.test.js` -- client poll helper
+
+### Manual hosted E2E (required before production)
+
+- [ ] Clerk sign-up/sign-in on deployed Vercel URL
+- [ ] Onboarding writes profile, CV, portals to `tenant_documents`
+- [ ] Dashboard and queue read back tenant data
+- [ ] `/api/scan` returns `202` with `pollUrl`; worker completes job; pipeline/scan-history update
+- [ ] PDF generation returns `202`; worker writes PDF to Storage; `/download-pdf` serves file
+- [ ] `/api/jobs/{other-tenant-id}` returns `404`
+- [ ] Worker restart reclaims stale `running` jobs after `WORKER_STALE_SECONDS`
+
+## Implementation Status
+
+| Step | Status |
+|------|--------|
+| Clerk dependency, middleware (`proxy.js`), auth adapter, tenant tests | Done |
+| Repository contract; `LocalCareerOpsRepository` + `SupabaseRepository` | Done |
+| Database schema (`tenant_documents`, `background_jobs`) | Done (manual apply) |
+| Object storage for PDFs via Storage + path keys | Done (no `generated_files` table) |
+| Hosted repository behind `CareerOpsDataClient` | Done |
+| Profile, CV, search config, queue, applications, evaluations in hosted storage | Done (path-keyed MVP) |
+| Scan and PDF routes enqueue jobs in hosted mode | Done |
+| Worker for scan and PDF jobs | Done (separate process) |
+| Guard hosted routes from inline `child_process` / Playwright | Done |
+| Normalized Postgres schema | Not started |
+| Clerk JWT RLS policies | Not started |
+| Live hosted E2E validation | Not done |
+| Production ops (monitoring, worker supervision, `vercel.json`) | Not done |

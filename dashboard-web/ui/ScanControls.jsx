@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { resolveWorkloadResponse } from '../lib/client/job-polling';
 
 export function ScanControls({ disabled = false }) {
   const [status, setStatus] = useState(null);
@@ -21,16 +22,19 @@ export function ScanControls({ disabled = false }) {
 
     try {
       const response = await fetch(`/api/scan?${params.toString()}`, { method: 'POST' });
-      const data = await response.json();
-      if (!data.success) {
-        setStatus({ type: 'error', message: data.error || 'Scan failed' });
-      } else {
-        setStatus({
-          type: 'success',
-          message: `Scan complete. Found ${data.totalFound || 0}, new ${data.newOffers || 0}.`
-        });
-        if (mode !== 'dry-run') setTimeout(() => window.location.reload(), 1500);
-      }
+      const data = await resolveWorkloadResponse(response, {
+        onProgress: job => {
+          if (job.status === 'queued' || job.status === 'running') {
+            setStatus({ type: 'info', message: `Scan ${job.status}...` });
+          }
+        }
+      });
+
+      setStatus({
+        type: 'success',
+        message: `Scan complete. Found ${data.totalFound || 0}, new ${data.newOffers || 0}.`
+      });
+      if (mode !== 'dry-run') setTimeout(() => window.location.reload(), 1500);
     } catch (error) {
       setStatus({ type: 'error', message: error.message });
     } finally {

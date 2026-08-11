@@ -1,0 +1,68 @@
+name: Hosted Dashboard CI
+
+# CI for the Next.js hosted adapter (dashboard-web/) and shared lib modules,
+# bridges, schema, and root facades it composes. Ubuntu-only: cross-platform
+# coverage for root scripts stays in test.yml; multiplying Next test/build
+# across three OSes would not add signal.
+on:
+  pull_request:
+    paths: &hosted-dashboard-paths
+      - '.github/workflows/web-ci.yml'
+      - 'dashboard-web/**'
+      - 'lib/**'
+      - 'templates/states.yml'
+      - 'templates/tracker-contract.json'
+      - 'templates/portals.example.yml'
+      - 'generate-pdf.mjs'
+      - 'generate-latex.mjs'
+      - 'set-status.mjs'
+      - 'check-liveness.mjs'
+      - 'liveness-core.mjs'
+      - 'liveness-api.mjs'
+      - 'liveness-browser.mjs'
+      - 'openai-eval.mjs'
+      - 'gemini-eval.mjs'
+      - 'ollama-eval.mjs'
+      - 'openrouter-runner.mjs'
+      - 'openai-tailor.mjs'
+      - 'scan.mjs'
+      - 'merge-tracker.mjs'
+      - 'dedup-tracker.mjs'
+      - 'normalize-statuses.mjs'
+      - 'reserve-report-num.mjs'
+      - 'tracker-parse.mjs'
+      - 'tracker-utils.mjs'
+      - 'profile-language.mjs'
+  push:
+    branches: [main]
+    paths: *hosted-dashboard-paths
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-dashboard-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dashboard-web:
+    name: dashboard-web test + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard-web
+    env:
+      # No Clerk, Supabase, LLM, or ATS credentials — tests use fakes/stubs.
+      CAREER_OPS_TENANT_MODE: local
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: dashboard-web/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build

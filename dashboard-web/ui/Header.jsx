@@ -1,11 +1,16 @@
 import Link from 'next/link';
+import { AuthControls } from './AuthControls';
 
-export function Header({ stats, activeView = 'ranked', tenantId = 'local-dev' }) {
+const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+
+export function Header({ stats, activeView = 'ranked', tenantId = 'local-dev', showAuth = false }) {
+  const renderAuth = showAuth || clerkEnabled;
   const navItems = [
     { id: 'ranked', href: '/', label: 'analytics /eval' },
     { id: 'pipeline', href: '/?view=pipeline', label: 'list_alt /tracker' },
     { id: 'scan', href: '/scan', label: 'radar /scan' },
-    { id: 'queue', href: '/queue', label: 'add /queue' }
+    { id: 'queue', href: '/queue', label: 'add /queue' },
+    { id: 'manage', href: '/manage', label: 'tune /manage' }
   ];
 
   return (
@@ -16,15 +21,18 @@ export function Header({ stats, activeView = 'ranked', tenantId = 'local-dev' })
             <Link href="/">~/career-ops/dashboard</Link>
           </h1>
           <div className="breadcrumb">/{activeView}</div>
-          <div className="tenant-pill">tenant: {tenantId}</div>
+          {!showAuth && <div className="tenant-pill">tenant: {tenantId}</div>}
         </div>
-        <nav className="nav-buttons" aria-label="Dashboard navigation">
-          {navItems.map(item => (
-            <Link key={item.id} href={item.href} className={`nav-btn ${activeView === item.id ? 'active' : ''}`}>
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <div className="header-actions">
+          <nav className="nav-buttons" aria-label="Dashboard navigation">
+            {navItems.map(item => (
+              <Link key={item.id} href={item.href} className={`nav-btn ${activeView === item.id ? 'active' : ''}`}>
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+          {renderAuth ? <AuthControls /> : null}
+        </div>
       </div>
       {stats ? (
         <div className="stats-bar">

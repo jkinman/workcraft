@@ -6,7 +6,7 @@ describe('update-system fork layer', () => {
     expect(isForkPath('dashboard-web/app/page.jsx')).toBe(true);
     expect(isForkPath('lib/path-roots.mjs')).toBe(true);
     expect(isForkPath('docs/HOSTED_VERCEL_READINESS.md')).toBe(true);
-    expect(isForkPath('docs/ARCHITECTURE.md')).toBe(false);
+    expect(isForkPath('docs/ARCHITECTURE.md')).toBe(true);
   });
 
   it('filters fork-owned paths from expanded system updates', () => {
@@ -15,9 +15,6 @@ describe('update-system fork layer', () => {
       'docs/HOSTED_VERCEL_READINESS.md',
       'dashboard-web/app/page.jsx',
       'scan.mjs'
-    ])).toEqual([
-      'docs/ARCHITECTURE.md',
-      'scan.mjs'
-    ]);
+    ])).toEqual(['scan.mjs']);
   });
 });

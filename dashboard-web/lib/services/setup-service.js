@@ -43,21 +43,21 @@ function createSetupService(dataClient) {
     };
   }
 
-  function initialize(target = 'all') {
+  async function initialize(target = 'all') {
     const initialized = [];
 
     if ((target === 'all' || target === 'portals') && !dataClient.readPortals()) {
-      dataClient.writePortals(readTemplate('templates/portals.example.yml'));
+      await dataClient.writePortals(readTemplate('templates/portals.example.yml'));
       initialized.push('portals');
     }
 
     if ((target === 'all' || target === 'profile') && !dataClient.readProfile()) {
-      dataClient.writeProfile(readTemplate('config/profile.example.yml'));
+      await dataClient.writeProfile(readTemplate('config/profile.example.yml'));
       initialized.push('profile');
     }
 
     if ((target === 'all' || target === 'pipeline') && !dataClient.readPipeline()) {
-      dataClient.writePipeline(EMPTY_PIPELINE);
+      await dataClient.writePipeline(EMPTY_PIPELINE);
       initialized.push('pipeline');
     }
 

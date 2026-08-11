@@ -1,23 +1,22 @@
 import tenantServices from '../../../lib/tenant-services';
-import validation from '../../../lib/api/validation';
-import pdfBundle from '../../../pdf-bundle-generator';
+import pdfRoute from '../../../lib/api/pdf-route';
 
 const { getTenantServices } = tenantServices;
-const { jsonError, requireString } = validation;
-const { generateFullEvalReportPDF } = pdfBundle;
+const { handlePdfRequest, requireReportSlug } = pdfRoute;
 
 export async function POST(request) {
-  const { services } = getTenantServices(request);
-  const body = await request.json().catch(() => ({}));
+  const { tenant, services } = await getTenantServices(request);
 
-  try {
-    const slug = requireString(body.slug || body.company, 'slug');
-    const job = services.reports.getBySlug(slug);
-    if (!job) return jsonError('Job evaluation not found', 404);
-
-    const result = await generateFullEvalReportPDF(job, services.reports.getRawContent(slug), { dataClient: services.dataClient });
-    return Response.json(result, { status: result.success ? 200 : 500 });
-  } catch (error) {
-    return jsonError(error.message, 400);
-  }
+  return handlePdfRequest(request, services, tenant, {
+    buildPayload(body, activeServices) {
+      const slug = requireReportSlug(body);
+      const job = activeServices.reports.getBySlug(slug);
+      if (!job) {
+        const error = new Error('Job evaluation not found');
+        error.statusCode = 404;
+        throw error;
+      }
+      return { kind: 'full-eval', slug };
+    },
+  });
 }

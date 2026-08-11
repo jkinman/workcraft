@@ -16,6 +16,13 @@ function createTenantCliRunner(dataClient) {
           CAREER_OPS_DATA_ROOT: dataClient.tenantRoot()
         }
       });
+    },
+
+    /** Canonical tracker mutation via set-status.mjs facade. */
+    async setTrackerStatus(selector, state, extraArgs = [], options = {}) {
+      const args = [selector, state, '--json', ...extraArgs];
+      const { stdout } = await this.runNodeScript('set-status.mjs', args, options);
+      return JSON.parse(stdout);
     }
   };
 }

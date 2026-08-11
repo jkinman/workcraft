@@ -12,7 +12,7 @@ function makeClient() {
 }
 
 describe('CareerOpsDataClient', () => {
-  it('maps user-layer files into a tenant root', () => {
+  it('maps user-layer files into a tenant root', async () => {
     const { client, rootPath } = makeClient();
 
     client.writeProfile('candidate:\n  full_name: Test User\n');
@@ -20,7 +20,7 @@ describe('CareerOpsDataClient', () => {
     client.writeInterviewPrep('acme-engineer.md', '# Acme interview notes\n');
     client.writePipeline('# Pipeline\n');
     client.writeReport('001-acme.md', '# Evaluation: Acme - Engineer\n');
-    client.writeOutputFile('cv-test-user-acme-2026-05-25.pdf', Buffer.from('pdf'));
+    await client.writeOutputFile('cv-test-user-acme-2026-05-25.pdf', Buffer.from('pdf'));
 
     expect(readFileSync(join(rootPath, 'tenants', 'tenant-a', 'config', 'profile.yml'), 'utf8')).toContain('Test User');
     expect(readFileSync(join(rootPath, 'tenants', 'tenant-a', 'modes', '_profile.md'), 'utf8')).toContain('Candidate strategy');
@@ -28,7 +28,7 @@ describe('CareerOpsDataClient', () => {
     expect(client.listInterviewPrep().map(file => file.filename)).toEqual(['acme-engineer.md']);
     expect(client.readPipeline()).toContain('# Pipeline');
     expect(client.listReports().map(report => report.filename)).toEqual(['001-acme.md']);
-    expect(client.readOutputFile('cv-test-user-acme-2026-05-25.pdf').toString()).toBe('pdf');
+    expect((await client.readOutputFile('cv-test-user-acme-2026-05-25.pdf')).toString()).toBe('pdf');
   });
 
   it('returns null for missing optional user files', () => {
@@ -40,16 +40,16 @@ describe('CareerOpsDataClient', () => {
     expect(client.readStoryBank()).toBeNull();
   });
 
-  it('stores generated files through the data client interface', () => {
+  it('stores generated files through the data client interface', async () => {
     const { client } = makeClient();
 
-    const metadata = client.putGeneratedFile({
+    const metadata = await client.putGeneratedFile({
       filename: 'cv-test-user-acme-2026-05-25.pdf',
       content: Buffer.from('pdf'),
       type: 'resume',
       relatedEntity: { company: 'Acme' }
     });
-    const file = client.getGeneratedFile('cv-test-user-acme-2026-05-25.pdf');
+    const file = await client.getGeneratedFile('cv-test-user-acme-2026-05-25.pdf');
 
     expect(metadata).toMatchObject({
       filename: 'cv-test-user-acme-2026-05-25.pdf',

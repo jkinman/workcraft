@@ -128,6 +128,36 @@ function transitionState(slug, newState) {
   };
 }
 
+function transitionReportContent(content, newState, date = new Date().toISOString().split('T')[0]) {
+  if (!STATE_META[newState]) {
+    return { success: false, error: `Invalid state: ${newState}` };
+  }
+
+  const fm = parseFrontmatter(content);
+  const currentState = fm.state;
+  const validNext = VALID_TRANSITIONS[currentState] || [];
+  if (!validNext.includes(newState) && currentState !== newState) {
+    return {
+      success: false,
+      error: `Invalid transition: ${currentState} → ${newState}. Valid: ${validNext.join(', ')}`,
+    };
+  }
+
+  const newHistory = [...fm.state_history, { state: newState, date }];
+  const newFrontmatter = buildFrontmatter(newState, newHistory);
+  const newContent = content.startsWith('---\n')
+    ? content.replace(/^---\n[\s\S]*?\n---\n\n?/, newFrontmatter)
+    : newFrontmatter + content;
+
+  return {
+    success: true,
+    state: newState,
+    previous: currentState,
+    history: newHistory,
+    content: newContent,
+  };
+}
+
 function getNextStates(currentState) {
   return VALID_TRANSITIONS[currentState] || [];
 }
@@ -165,5 +195,6 @@ module.exports = {
   getAllStatesWithCounts,
   parseFrontmatter,
   getReportPath,
-  buildFrontmatter
+  buildFrontmatter,
+  transitionReportContent,
 };

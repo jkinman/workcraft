@@ -1,7 +1,20 @@
 # Personal data (user fills these)
+cv.md
+article-digest.md
+local/
 data/applications.md
 data/pipeline.md
 data/scan-history.tsv
+data/*
+!data/.gitkeep
+!data/offers/
+!data/parser-output/
+data/offers/*
+!data/offers/.gitkeep
+data/parser-output/**
+!data/parser-output/**/
+!data/parser-output/.gitkeep
+!data/parser-output/**/.gitkeep
 reports/*.md
 !reports/.gitkeep
 output/*
@@ -14,20 +27,58 @@ batch/tracker-additions/**/*.tsv
 !batch/tracker-additions/.gitkeep
 jds/*
 !jds/.gitkeep
+writing-samples/*
+!writing-samples/README.md
+cvs/
+ai-evaluation-syllabus.md
+langchain-syllabus.md
+
+# Interview prep is user data; ship only scaffolding.
+interview-prep/*
+!interview-prep/
+!interview-prep/.gitkeep
+!interview-prep/sessions/
+interview-prep/sessions/*
+!interview-prep/sessions/.gitkeep
+!interview-prep/sessions/README.md
 
 # User config and customization (never auto-updated)
 config/profile.yml
+config/cv-facts.json
+config/benchmarks.yml
 portals.yml
 modes/_profile.md
+modes/_custom.md
+modes/_brief.md
+voice-dna.md
+config/plugins.yml
+plugins.local/
+plugins.lock
+opencode.json
+.claude/settings.json
+.claude/hooks/
 .update-dismissed
 .update-lock
+.manifesto-noted
 
-# Generated
+# Multi-tenant user data (Clerk-namespaced, never commit)
+tenants/
+
+# Secrets and generated files
+.env
+**/.env.local
+**/.env*.local
+**/*.tsbuildinfo
 .resolved-prompt-*
 .next/
 dashboard-web/.next/
+supabase/.temp/
+dashboard-web/supabase/.temp/
 node_modules/
 bun.lock
+.tmp-script-test-*/
+reports/*-RESERVED.md
+*.bak*
 
 # OS
 .DS_Store
@@ -37,5 +88,16 @@ bun.lock
 # Claude Code local
 .claude/settings.local.json
 .claude/memory/
+.opencode/settings.local.json
+.opencode/memory/
+.mcp.json
 career-dashboard
 package-lock.json
+!dashboard-web/package-lock.json
+
+# Local browser and planning artifacts
+.playwright-mcp/
+test-results/
+playwright-report/
+plan/
+.career-ops-web/

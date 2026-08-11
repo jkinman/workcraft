@@ -4,9 +4,10 @@ const CONFIG = require('../../config');
 const { DEFAULT_TENANT_ID, normalizeTenantId } = require('../tenant-context');
 
 class LocalCareerOpsRepository {
-  constructor({ tenantId = DEFAULT_TENANT_ID, rootPath = CONFIG.CAREER_OPS_PATH } = {}) {
+  constructor({ tenantId = DEFAULT_TENANT_ID, rootPath } = {}) {
     this.tenantId = normalizeTenantId(tenantId);
-    this.rootPath = rootPath;
+    this.rootPath = rootPath || process.env.CAREER_OPS_PATH || CONFIG.CAREER_OPS_PATH;
+    this.storageAdapter = 'local';
   }
 
   tenantRoot() {
@@ -48,6 +49,18 @@ class LocalCareerOpsRepository {
     return path.join(this.tenantRoot(), 'cv.md');
   }
 
+  articleDigestPath() {
+    return path.join(this.tenantRoot(), 'article-digest.md');
+  }
+
+  storyBankPath() {
+    return path.join(this.tenantRoot(), 'interview-prep', 'story-bank.md');
+  }
+
+  jdsDir() {
+    return path.join(this.tenantRoot(), 'jds');
+  }
+
   exists(filePath) {
     return fs.existsSync(filePath);
   }
@@ -60,9 +73,15 @@ class LocalCareerOpsRepository {
     return fs.readFileSync(filePath);
   }
 
-  writeText(filePath, content) {
+  async writeText(filePath, content) {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, content, 'utf8');
+  }
+
+  async deleteText(filePath) {
+    if (!fs.existsSync(filePath)) return false;
+    fs.unlinkSync(filePath);
+    return true;
   }
 
   writeBinary(filePath, content) {
@@ -87,6 +106,10 @@ class LocalCareerOpsRepository {
         path: path.join(dir, file),
         stat: fs.statSync(path.join(dir, file))
       }));
+  }
+
+  async listOutputFiles() {
+    return this.listFilesInDirectory(this.outputDir(), file => file !== '.gitkeep');
   }
 }
 

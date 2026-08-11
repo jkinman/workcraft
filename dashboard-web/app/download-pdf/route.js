@@ -8,7 +8,7 @@ const { pdfDownloadHeaders, validatePdfFilename } = outputFiles;
 
 export async function GET(request) {
   const url = new URL(request.url);
-  const { services } = getTenantServices(request);
+  const { services } = await getTenantServices(request);
 
   let filename;
   try {
@@ -17,7 +17,7 @@ export async function GET(request) {
     return jsonError(error.message, 400);
   }
 
-  const body = services.dataClient.readOutputFile(filename);
+  const body = await services.dataClient.readOutputFile(filename);
   if (!body) return jsonNotFound('File not found');
 
   return new Response(body, {

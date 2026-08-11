@@ -36,11 +36,12 @@ function getTenantContext(request) {
   return buildTenantContext(DEFAULT_TENANT_ID, 'default', mode);
 }
 
-function buildTenantContext(tenantId, tenantSource, mode = process.env.CAREER_OPS_TENANT_MODE || 'local-dev') {
+function buildTenantContext(tenantId, tenantSource, mode = process.env.CAREER_OPS_TENANT_MODE || 'local-dev', extras = {}) {
   return {
     tenantId: normalizeTenantId(tenantId),
     tenantSource,
-    mode
+    mode,
+    ...extras,
   };
 }
 

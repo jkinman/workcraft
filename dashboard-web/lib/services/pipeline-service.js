@@ -99,10 +99,10 @@ function createPipelineService(dataClient) {
       return parsePipelineContent(content);
     },
 
-    add(url, notes) {
+    async add(url, notes) {
       const entry = inferPipelineEntry(url, notes);
       const current = dataClient.readPipeline() || '';
-      dataClient.writePipeline(addEntryToPipelineContent(current, entry));
+      await dataClient.writePipeline(addEntryToPipelineContent(current, entry));
       return entry;
     }
   };
