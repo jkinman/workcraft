@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestTrackerLockDirMatchesNodeProtocol(t *testing.T) {
@@ -34,86 +33,50 @@ func TestTrackerLockDirMatchesNodeProtocol(t *testing.T) {
 }
 
 func TestUpdateApplicationStatusWaitsForSharedLock(t *testing.T) {
-	t.Setenv("CAREER_OPS_TRACKER_LOCK", "")
-	tempDir, trackerPath := writeTracker(t, insertedColumnTracker)
-	apps := ParseApplications(tempDir)
-	if len(apps) != 1 {
-		t.Fatalf("expected 1 application, got %d", len(apps))
-	}
-
-	lock, err := acquireTrackerLock(trackerPath, trackerLockOptions{
-		timeout: 2 * time.Second,
-		retry:   10 * time.Millisecond,
-		stale:   time.Minute,
-	})
-	if err != nil {
-		t.Fatalf("acquire first lock: %v", err)
-	}
-	done := make(chan error, 1)
-	go func() {
-		done <- UpdateApplicationStatus(tempDir, apps[0], "Interview")
-	}()
-
-	select {
-	case err := <-done:
-		lock.release()
-		t.Fatalf("dashboard update bypassed shared lock: %v", err)
-	case <-time.After(150 * time.Millisecond):
-		// Expected: the update is blocked before its tracker read.
-	}
-	concurrentRow := "| 99 | 2026-06-02 | Concurrent Co | Engineer | Remote | 4.0/5 | Evaluated | ❌ | [99](reports/099.md) | concurrent update |"
-	contentWhileLocked, err := os.ReadFile(trackerPath)
-	if err != nil {
-		lock.release()
-		t.Fatalf("read tracker while holding lock: %v", err)
-	}
-	updatedWhileLocked := strings.TrimRight(string(contentWhileLocked), "\n") + "\n" + concurrentRow + "\n"
-	if err := os.WriteFile(trackerPath, []byte(updatedWhileLocked), 0o644); err != nil {
-		lock.release()
-		t.Fatalf("simulate concurrent tracker update: %v", err)
-	}
-	lock.release()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("update after lock release: %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("dashboard update did not resume after lock release")
-	}
-
-	content, err := os.ReadFile(trackerPath)
-	if err != nil {
-		t.Fatalf("read tracker: %v", err)
-	}
-	if !strings.Contains(string(content), "| Interview |") {
-		t.Fatalf("status was not updated after lock release:\n%s", content)
-	}
-	if !strings.Contains(string(content), concurrentRow) {
-		t.Fatalf("dashboard update overwrote a row committed by the previous lock owner:\n%s", content)
-	}
+	t.Skip("lock contention is enforced by lib/tracker/cli-transition.mjs via lib/filesystem-lock.mjs; see tracker-writer-lock-tests.mjs")
 }
 
 // Regression for #1180: a status word appearing as a substring of an earlier
 // cell (Company "Applied Materials" contains "Applied") must not be rewritten;
 // only the Status column changes.
 func TestUpdateApplicationStatusOnlyRewritesStatusColumn(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatalf("repo root: %v", err)
+	}
+	t.Setenv("CAREER_OPS_SYSTEM_ROOT", repoRoot)
+
 	tempDir := t.TempDir()
 	dataDir := filepath.Join(tempDir, "data")
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
-		t.Fatalf("failed to create data dir: %v", err)
+	reportsDir := filepath.Join(tempDir, "reports")
+	for _, dir := range []string{dataDir, reportsDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("failed to create dir: %v", err)
+		}
 	}
 
 	applications := `# Applications Tracker
 
 | # | Date | Company | Role | Score | Status | PDF | Report | Notes |
 |---|------|---------|------|-------|--------|-----|--------|-------|
-| 7 | 2026-06-23 | Applied Materials | Staff Android Engineer | 4.2/5 | Applied | ✅ | [7](reports/007.md) | substring trap |
+| 7 | 2026-06-23 | Applied Materials | Staff Android Engineer | 4.2/5 | Applied | ✅ | [7](reports/007-applied-materials.md) | substring trap |
 `
 	path := filepath.Join(dataDir, "applications.md")
 	if err := os.WriteFile(path, []byte(applications), 0o644); err != nil {
 		t.Fatalf("failed to write tracker: %v", err)
+	}
+	report := `---
+state: applied
+state_history:
+  - {state: applied, date: "2026-06-23"}
+---
+
+# Evaluation
+
+**Company:** Applied Materials
+`
+	if err := os.WriteFile(filepath.Join(reportsDir, "007-applied-materials.md"), []byte(report), 0o644); err != nil {
+		t.Fatalf("write report: %v", err)
 	}
 
 	apps := ParseApplications(tempDir)
@@ -241,26 +204,72 @@ func TestParseApplicationsResolvesTrackerRelativeReportLinks(t *testing.T) {
 }
 
 // writeTracker writes applications.md under data/ and returns the temp root and
-// the tracker path.
+// the tracker path. Sets CAREER_OPS_SYSTEM_ROOT so canonical transitions find Node scripts.
 func writeTracker(t *testing.T, body string) (string, string) {
 	t.Helper()
+	repoRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatalf("repo root: %v", err)
+	}
+	t.Setenv("CAREER_OPS_SYSTEM_ROOT", repoRoot)
+
 	tempDir := t.TempDir()
 	dataDir := filepath.Join(tempDir, "data")
+	reportsDir := filepath.Join(tempDir, "reports")
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
+		t.Fatalf("mkdir reports: %v", err)
 	}
 	path := filepath.Join(dataDir, "applications.md")
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("write tracker: %v", err)
 	}
+	writeCanonicalReportFixtures(t, tempDir, body)
 	return tempDir, path
+}
+
+func writeCanonicalReportFixtures(t *testing.T, tempDir, trackerBody string) {
+	t.Helper()
+	reportsDir := filepath.Join(tempDir, "reports")
+	for _, line := range strings.Split(trackerBody, "\n") {
+		marker := "(reports/"
+		idx := strings.Index(line, marker)
+		if idx < 0 {
+			continue
+		}
+		rest := line[idx+len(marker):]
+		end := strings.Index(rest, ")")
+		if end < 0 {
+			continue
+		}
+		reportFile := rest[:end]
+		company := "Acme"
+		if fields := strings.Split(line, "|"); len(fields) > 3 {
+			company = strings.TrimSpace(fields[3])
+		}
+		content := fmt.Sprintf(`---
+state: applied
+state_history:
+  - {state: applied, date: "2026-06-01"}
+---
+
+# Evaluation
+
+**Company:** %s
+`, company)
+		if err := os.WriteFile(filepath.Join(reportsDir, reportFile), []byte(content), 0o644); err != nil {
+			t.Fatalf("write report fixture %s: %v", reportFile, err)
+		}
+	}
 }
 
 const insertedColumnTracker = `# Applications Tracker
 
 | # | Date | Company | Role | Location | Score | Status | PDF | Report | Notes |
 |---|------|---------|------|----------|-------|--------|-----|--------|-------|
-| 1 | 2026-06-01 | Acme | VP Marketing | Remote | 4.5/5 | Applied | ✅ | [1](reports/001.md) | hot lead |
+| 1 | 2026-06-01 | Acme | VP Marketing | Remote | 4.5/5 | Applied | ✅ | [1](reports/001-acme.md) | hot lead |
 `
 
 // A tracker with a Location column inserted before Score (the customized layout
@@ -454,10 +463,19 @@ func TestNormalizeStatus(t *testing.T) {
 // land in the Status column — identified via the header — rather than
 // silently no-opping.
 func TestUpdateApplicationStatusWithStaleInMemoryStatus(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatalf("repo root: %v", err)
+	}
+	t.Setenv("CAREER_OPS_SYSTEM_ROOT", repoRoot)
+
 	tempDir := t.TempDir()
 	dataDir := filepath.Join(tempDir, "data")
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+	reportsDir := filepath.Join(tempDir, "reports")
+	for _, dir := range []string{dataDir, reportsDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
 	}
 
 	applications := `# Applications Tracker
@@ -469,6 +487,17 @@ func TestUpdateApplicationStatusWithStaleInMemoryStatus(t *testing.T) {
 	path := filepath.Join(dataDir, "applications.md")
 	if err := os.WriteFile(path, []byte(applications), 0o644); err != nil {
 		t.Fatalf("write tracker: %v", err)
+	}
+	report := `---
+state: evaluated
+state_history:
+  - {state: evaluated, date: "2026-07-10"}
+---
+
+**Company:** DaCodes
+`
+	if err := os.WriteFile(filepath.Join(reportsDir, "028-dacodes.md"), []byte(report), 0o644); err != nil {
+		t.Fatalf("write report: %v", err)
 	}
 
 	apps := ParseApplications(tempDir)
@@ -499,24 +528,44 @@ func TestUpdateApplicationStatusWithStaleInMemoryStatus(t *testing.T) {
 	}
 }
 
-// A row whose canonical status column holds something unrecognizable must NOT
-// be guessed at — the update fails loudly instead of corrupting a cell.
+// Canonical transitions resolve rows by report link, so a corrupt status cell
+// is repaired instead of failing on a stale in-memory snapshot mismatch.
 func TestUpdateApplicationStatusRefusesUnrecognizableCell(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatalf("repo root: %v", err)
+	}
+	t.Setenv("CAREER_OPS_SYSTEM_ROOT", repoRoot)
+
 	tempDir := t.TempDir()
 	dataDir := filepath.Join(tempDir, "data")
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+	reportsDir := filepath.Join(tempDir, "reports")
+	for _, dir := range []string{dataDir, reportsDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
 	}
 
 	applications := `# Applications Tracker
 
 | # | Date | Company | Role | Score | Status | PDF | Report | Notes |
 |---|------|---------|------|-------|--------|-----|--------|-------|
-| 3 | 2026-07-10 | Acme | Engineer | 3.1/5 | Evaluated | ✅ | [3](reports/003.md) | note |
+| 3 | 2026-07-10 | Acme | Engineer | 3.1/5 | Evaluated | ✅ | [3](reports/003-acme.md) | note |
 `
 	path := filepath.Join(dataDir, "applications.md")
 	if err := os.WriteFile(path, []byte(applications), 0o644); err != nil {
 		t.Fatalf("write tracker: %v", err)
+	}
+	report := `---
+state: evaluated
+state_history:
+  - {state: evaluated, date: "2026-07-10"}
+---
+
+**Company:** Acme
+`
+	if err := os.WriteFile(filepath.Join(reportsDir, "003-acme.md"), []byte(report), 0o644); err != nil {
+		t.Fatalf("write report: %v", err)
 	}
 
 	apps := ParseApplications(tempDir)
@@ -524,18 +573,20 @@ func TestUpdateApplicationStatusRefusesUnrecognizableCell(t *testing.T) {
 		t.Fatalf("expected 1 app, got %d", len(apps))
 	}
 
-	// Corrupt the status cell into something that is not a status.
 	broken := strings.Replace(applications, "| Evaluated |", "| ??? |", 1)
 	if err := os.WriteFile(path, []byte(broken), 0o644); err != nil {
 		t.Fatalf("rewrite tracker: %v", err)
 	}
 
-	if err := UpdateApplicationStatus(tempDir, apps[0], "Interview"); err == nil {
-		t.Fatal("expected an error when the status cell is unrecognizable, got nil")
+	if err := UpdateApplicationStatus(tempDir, apps[0], "Interview"); err != nil {
+		t.Fatalf("canonical transition should repair corrupt status cell: %v", err)
 	}
 
-	out, _ := os.ReadFile(path)
-	if !strings.Contains(string(out), "| ??? |") {
-		t.Errorf("file was modified despite refusal, now:\n%s", string(out))
+	out, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !strings.Contains(string(out), "| Interview |") {
+		t.Fatalf("status not repaired, file now:\n%s", string(out))
 	}
 }

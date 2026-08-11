@@ -111,6 +111,121 @@ describe('repository contract', () => {
     expect(client.uploads[0].key).toBe('tenant-a/output/cv-contract-acme.pdf');
   });
 
+  it('rolls back Supabase cache entries when upsert fails', async () => {
+    const client = makeFakeSupabaseClient();
+    client.from = (table) => {
+      if (table !== 'tenant_documents') throw new Error(`Unexpected table: ${table}`);
+      return {
+        select() {
+          return {
+            eq(_column, tenantId) {
+              return Promise.resolve({ data: [], error: null });
+            },
+          };
+        },
+        upsert() {
+          return Promise.resolve({ error: new Error('write failed') });
+        },
+      };
+    };
+    const repository = new SupabaseRepository({ tenantId: 'tenant-a', client, env: {} });
+    await repository.initialize();
+    await expect(repository.writeText('data/applications.md', 'broken')).rejects.toThrow('write failed');
+    expect(repository.readText('data/applications.md')).toBeNull();
+  });
+
+  it('restores prior Supabase cache entries when upsert fails after an existing document', async () => {
+    const client = makeFakeSupabaseClient({
+      documents: [{
+        tenant_id: 'tenant-a',
+        path: 'data/applications.md',
+        content: 'before',
+        updated_at: '2026-05-25T00:00:00.000Z',
+      }],
+    });
+    client.from = (table) => {
+      if (table !== 'tenant_documents') throw new Error(`Unexpected table: ${table}`);
+      const docRows = new Map([['data/applications.md', {
+        tenant_id: 'tenant-a',
+        path: 'data/applications.md',
+        content: 'before',
+        updated_at: '2026-05-25T00:00:00.000Z',
+      }]]);
+      return {
+        select() {
+          return {
+            eq() {
+              return Promise.resolve({ data: [...docRows.values()], error: null });
+            },
+          };
+        },
+        upsert() {
+          return Promise.resolve({ error: new Error('write failed') });
+        },
+      };
+    };
+    const repository = new SupabaseRepository({ tenantId: 'tenant-a', client, env: {} });
+    await repository.initialize();
+    await expect(repository.writeText('data/applications.md', 'broken')).rejects.toThrow('write failed');
+    expect(repository.readText('data/applications.md')).toBe('before');
+  });
+
+  it('rolls back mutateDocuments after a partial write failure', async () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'career-ops-mutate-'));
+    const repository = new LocalCareerOpsRepository({ tenantId: 'tenant-a', rootPath });
+    const client = new CareerOpsDataClient(repository);
+    await client.writeProfile('candidate:\n  full_name: Mutate User\n');
+
+    const rollbackRepository = Object.create(repository, {
+      writeText: {
+        value: async (key, content) => {
+          if (key === repository.dataPath('pipeline.md')) {
+            throw new Error('injected pipeline failure');
+          }
+          return repository.writeText(key, content);
+        },
+      },
+    });
+    const rollbackClient = new CareerOpsDataClient(rollbackRepository);
+
+    await expect(rollbackClient.mutateDocuments([
+      { key: repository.profilePath(), content: 'candidate:\n  full_name: Broken\n' },
+      { key: repository.dataPath('pipeline.md'), content: '# Broken\n' },
+    ])).rejects.toThrow('injected pipeline failure');
+
+    expect(client.readProfile()).toContain('Mutate User');
+  });
+
+  it('supports manual rollback after a successful mutateDocuments batch', async () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'career-ops-mutate-rollback-'));
+    const repository = new LocalCareerOpsRepository({ tenantId: 'tenant-a', rootPath });
+    const client = new CareerOpsDataClient(repository);
+    await client.writeProfile('candidate:\n  full_name: Mutate User\n');
+
+    const tx = await client.mutateDocuments([
+      { key: repository.profilePath(), content: 'candidate:\n  full_name: Changed\n' },
+      { key: repository.dataPath('pipeline.md'), content: '# Pipeline\n' },
+    ]);
+
+    expect(client.readProfile()).toContain('Changed');
+    await tx.rollback();
+    expect(client.readProfile()).toContain('Mutate User');
+    expect(client.readPipeline()).toBeNull();
+  });
+
+  it('isolates tenant storage keys between repositories', async () => {
+    const client = makeFakeSupabaseClient();
+    const repoA = new SupabaseRepository({ tenantId: 'tenant-a', client, env: {} });
+    const repoB = new SupabaseRepository({ tenantId: 'tenant-b', client, env: {} });
+    await repoA.initialize();
+    await repoB.initialize();
+    await new CareerOpsDataClient(repoA).writeProfile('tenant: a\n');
+    await new CareerOpsDataClient(repoB).writeProfile('tenant: b\n');
+    expect(client.uploads?.length ?? 0).toBe(0);
+    expect(repoA.readText('config/profile.yml')).toContain('tenant: a');
+    expect(repoB.readText('config/profile.yml')).toContain('tenant: b');
+  });
+
   it('lists and downloads hosted output files from storage', async () => {
     const client = makeFakeSupabaseClient({
       storage: {

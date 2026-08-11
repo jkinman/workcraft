@@ -38,12 +38,19 @@ import yaml from 'js-yaml';
 
 import { makeHttpCtx, fetchJson } from './providers/_http.mjs';
 import { isResolverFailure, dnsPacingStats } from './providers/_dns-cache.mjs';
-import greenhouse from './providers/greenhouse.mjs';
-import lever from './providers/lever.mjs';
-import ashby from './providers/ashby.mjs';
-import workday from './providers/workday.mjs';
-import icims from './providers/icims.mjs';
-import { buildTitleFilter, buildLocationFilter, buildContentFilter, matchedTitleKeywords, loadSeenUrls, normalizeUrlForDedup, appendToPipeline, appendToScanHistory, loadBlacklist, parseSinceDays } from './scan.mjs';
+import {
+  buildTitleFilter,
+  buildLocationFilter,
+  buildContentFilter,
+  matchedTitleKeywords,
+  loadSeenUrls,
+  normalizeUrlForDedup,
+  appendToPipeline,
+  appendToScanHistory,
+  loadBlacklist,
+  parseSinceDays,
+} from './scan.mjs';
+import { REVERSE_ATS_SOURCES as SOURCES } from './lib/discovery/reverse-sources.mjs';
 import { SEED_SOURCES, toPortalEntry } from './seeds/vc-portfolios.mjs';
 import { normalizeCompany } from './tracker-utils.mjs';
 
@@ -53,13 +60,6 @@ const PORTALS_PATH = process.env.CAREER_OPS_PORTALS || 'portals.yml';
 const PIPELINE_PATH = 'data/pipeline.md';
 const CACHE_DIR = 'data/cache/ats-companies';
 const CACHE_TTL_HOURS = 24;
-// Tracks `main` deliberately: the dataset's value is freshness (new boards
-// appear weekly), so pinning a commit would defeat the purpose. Integrity rests
-// on two layers instead: SLUG_RE validates every entry against a safe charset
-// before interpolation, and entryOnHost (below) re-parses each finished
-// careers_url and drops anything that doesn't resolve to the ATS's own host —
-// so a tampered dataset can at worst name boards that don't exist.
-const DATASET_BASE = 'https://raw.githubusercontent.com/Feashliaa/job-board-aggregator/main/data';
 const CONCURRENCY = 20;
 // A refusing resolver fails every lookup in milliseconds, so a sweep that
 // keeps going just feeds it (#2229). Stop after this many consecutive
@@ -134,69 +134,8 @@ export function datasetFingerprint(list) {
   return createHash('sha1').update(JSON.stringify(list)).digest('hex').slice(0, 16);
 }
 
-// Dataset entries are external input destined for URL interpolation — reject
-// anything outside a conservative slug charset.
-const SLUG_RE = /^[A-Za-z0-9._-]+$/;
-
-// SSRF guard / defense in depth: confirm a constructed careers_url actually
-// resolves to the expected ATS host before it reaches provider.fetch. Returns
-// the synthetic entry, or null if the URL won't parse or the host isn't canonical.
-export function entryOnHost(name, careersUrl, isCanonicalHost) {
-  let hostname;
-  try {
-    ({ hostname } = new URL(careersUrl));
-  } catch {
-    return null;
-  }
-  return isCanonicalHost(hostname) ? { name, careers_url: careersUrl } : null;
-}
-
-// Each source: the provider module that does the fetching, plus how to turn a
-// dataset entry into a synthetic PortalEntry the provider can detect/fetch.
-export const SOURCES = {
-  greenhouse: {
-    provider: greenhouse,
-    dataset: `${DATASET_BASE}/greenhouse_companies.json`,
-    toEntry: (slug) => SLUG_RE.test(String(slug))
-      ? entryOnHost(String(slug), `https://job-boards.greenhouse.io/${slug}`, h => h === 'job-boards.greenhouse.io')
-      : null,
-  },
-  lever: {
-    provider: lever,
-    dataset: `${DATASET_BASE}/lever_companies.json`,
-    toEntry: (slug) => SLUG_RE.test(String(slug))
-      ? entryOnHost(String(slug), `https://jobs.lever.co/${slug}`, h => h === 'jobs.lever.co')
-      : null,
-  },
-  ashby: {
-    provider: ashby,
-    dataset: `${DATASET_BASE}/ashby_companies.json`,
-    toEntry: (slug) => SLUG_RE.test(String(slug))
-      ? entryOnHost(String(slug), `https://jobs.ashbyhq.com/${slug}`, h => h === 'jobs.ashbyhq.com')
-      : null,
-  },
-  workday: {
-    provider: workday,
-    dataset: `${DATASET_BASE}/workday_companies.json`,
-    // Dataset entries are "tenant|instance|site" triples.
-    toEntry: (line) => {
-      const [tenant, instance, site] = String(line).split('|');
-      if (![tenant, instance, site].every(p => p && SLUG_RE.test(p))) return null;
-      return entryOnHost(
-        tenant,
-        `https://${tenant}.${instance}.myworkdayjobs.com/${site}`,
-        h => h === `${tenant}.${instance}.myworkdayjobs.com` && h.endsWith('.myworkdayjobs.com'),
-      );
-    },
-  },
-  icims: {
-    provider: icims,
-    dataset: `${DATASET_BASE}/icims_companies.json`,
-    toEntry: (slug) => SLUG_RE.test(String(slug))
-      ? entryOnHost(String(slug), `https://careers-${slug}.icims.com/jobs/search?ss=1&in_iframe=1`, h => h === `careers-${String(slug).toLowerCase()}.icims.com`)
-      : null,
-  },
-};
+export { entryOnHost, SLUG_CHARSET as SLUG_RE } from './lib/discovery/ats-identity.mjs';
+export { REVERSE_ATS_SOURCES as SOURCES } from './lib/discovery/reverse-sources.mjs';
 
 // ── CLI args ────────────────────────────────────────────────────────
 
@@ -425,7 +364,7 @@ export function sampleCompanies(list, limit, shuffle = false) {
 // ATS providers that can auto-detect from a careers_url, in probe order.
 // Workday is excluded: its URL format requires a tenant|instance|site triple
 // that can't be derived from a portfolio slug alone.
-const SEED_PROVIDERS = [greenhouse, lever, ashby];
+const SEED_PROVIDERS = ['greenhouse', 'lever', 'ashby'].map((id) => SOURCES[id].provider);
 
 /**
  * Scan a VC portfolio seed source and return matching job offers.

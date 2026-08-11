@@ -17,10 +17,11 @@
  *   node scan-interamt.mjs --keyword "Softwareentwickler"
  */
 
-import { chromium } from 'playwright';
+import { getChromium } from './lib/discovery/browser-transport.mjs';
 import { readFileSync, existsSync, mkdirSync } from 'fs';
 import yaml from 'js-yaml';
-import { appendToPipeline, appendToScanHistory, loadSeenUrls } from './scan.mjs';
+import { appendToPipeline, appendToScanHistory } from './lib/discovery/history.mjs';
+import { loadSeenUrls } from './lib/discovery/dedupe.mjs';
 
 // ── Config ───────────────────────────────────────────────────────────
 
@@ -274,7 +275,7 @@ async function main() {
   const dupeSkipped = [];
   const errors = [];
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await (await getChromium()).launch({ headless: true });
   const context = await browser.newContext({ locale: 'de-DE', timezoneId: 'Europe/Berlin' });
   const page = await context.newPage();
 

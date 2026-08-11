@@ -2,6 +2,8 @@
 
 A high-level map of how career-ops is put together. For the precise system/user file boundary, see [DATA_CONTRACT.md](DATA_CONTRACT.md); for contribution mechanics, see [CONTRIBUTING.md](CONTRIBUTING.md); for runtime flow diagrams (evaluation steps, batch processing), see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+**Fork extension:** domain vocabulary lives in [CONTEXT.md](CONTEXT.md); modular-monolith, LLM gateway, and hosted persistence decisions are recorded in [docs/adr/](docs/adr/). Architecture contract tests in `dashboard-web/test/architecture-contract.test.js` guard those boundaries.
+
 ## Principles
 
 Career-ops is built on three commitments that every design decision serves:
@@ -27,20 +29,33 @@ Settled doctrine ([#918](https://github.com/santifer/career-ops/issues/918)): th
 
 The repo keeps its ~70 scripts at the root deliberately ([#1386](https://github.com/santifer/career-ops/issues/1386)). Path stability is a feature here, not an accident: the updater's `SYSTEM_PATHS` allowlist, community plugins, docs, guides, and the muscle memory of thousands of users (`node scan.mjs`) all reference these paths. A cosmetic reorganization would break forks and plugins for no functional gain. The conventions that keep the flat root navigable: one script = one job, `*.test.mjs` sits next to what it tests, and every script is registered in `SYSTEM_PATHS` (enforced in CI by the coverage guard).
 
+## Modular-monolith extension
+
+The flat root now serves as a stable facade layer. Implementation is grouped into import-safe domain modules under `lib/`:
+
+- `llm/`, `evaluation/`, `discovery/`, `documents/`, `tracker/`
+- `batch/`, `profile/`, `reports/`
+
+The rule is **facades parse protocols; modules implement behavior; adapters cross external boundaries**. A root CLI may parse argv and map errors to exit codes, but it must not duplicate its domain pipeline. A Next.js route may authenticate and translate a response, but it must not launch Playwright or call a model provider directly.
+
+Seams are intentionally narrow and require multiple implementations before becoming abstractions. Current examples are LLM providers, local/Supabase repositories, local-inline/hosted-queue workloads, and HTML/LaTeX document generation.
+
 ## Component map
 
 ```
-AI coding CLI  ─┐
-(or scripts)    │  reads prompt files
-                ▼
-   modes/*.md  ──────────────►  the "brain": scoring, evaluation,
-   (_shared.md = scoring core)   apply, scan, interview, etc. prompts
-                │
-   ┌────────────┼─────────────────────────────────────────────┐
-   ▼            ▼                  ▼               ▼            ▼
- scan        evaluate          generate         track       update
- scan.mjs    oferta.md         PDFs/CVs/        data/        update-
- providers/  (+eval scripts)   cover letters    reports/     system.mjs
+AI CLI / root scripts / Next.js / Go TUI
+                    │
+                    ▼
+              stable facades
+                    │
+   ┌────────────────┼──────────────────────────┐
+   ▼                ▼            ▼             ▼
+discovery       evaluation    documents      tracker
+providers       LLM gateway   HTML/LaTeX     shared contract
+   │                │            │             │
+   └────────────────┴────────────┴─────────────┘
+                    ▼
+       local files or hosted repositories
 ```
 
 ### Discovery — `scan.mjs` + `providers/`
@@ -67,7 +82,12 @@ Safely pulls new system files from upstream without touching user data. It backs
 Each CLI reads its own entry file, all of which point at the canonical `AGENTS.md`: `CLAUDE.md` (full), and thin `@AGENTS.md` redirect wrappers `OPENCODE.md`, `CODEX.md`, `GEMINI.md`, plus the `.agents/skills/` skill entrypoints. This is the [open agent skill standard](https://agentskills.io).
 
 ### Dashboard (optional)
-A standalone Go TUI under `dashboard/` for browsing the pipeline. Isolated from the core — never required.
+Two optional adapters consume the same domain contracts:
+
+- `dashboard/` — standalone Go TUI for local workspaces.
+- `dashboard-web/` — Next.js multi-tenant app using Clerk, Supabase RLS, and a separate lease-safe worker.
+
+Neither changes the local file formats or root CLI contracts.
 
 ## Data flow (a typical run)
 
@@ -81,13 +101,19 @@ scan ──► data/pipeline.md ──► evaluate (oferta + cv) ──► repor
 
 ## Quality gates
 
-- `test-all.mjs` — the full suite (500+ checks across scoring, scan, tracker, PDF, security, updater).
+- `test-all.mjs` — root suite across scoring, scan, tracker, PDF, security, updater and module contracts.
+- `dashboard-web` Vitest suite — request scope, repository contracts, two-tenant isolation, worker resilience and RLS.
+- `dashboard-web` Next build — route/module boundary and production bundle validation.
+- `dashboard` Go suite — shared tracker contract and local TUI behavior.
 - `updater-migration-tests.mjs` — enforces the system/user boundary and safe cross-version upgrades.
-- CI: `test` + CodeQL are required; CodeRabbit reviews every PR; Renovate keeps deps current.
+- `validate-system-paths-coverage.mjs` — ensures every shipped path belongs to the updater contract.
 
 ## Where to start reading
 
 - The boundary → `DATA_CONTRACT.md`
+- Domain terms (fork) → `CONTEXT.md`
+- Structural decisions (fork) → `docs/adr/`
 - The scoring → `modes/_shared.md` + `modes/oferta.md`
 - Adding a job source → [`providers/README.md`](providers/README.md)
 - The updater → `update-system.mjs`
+- Hosted dashboard fork layer → [`docs/FORK_LAYER.md`](docs/FORK_LAYER.md)

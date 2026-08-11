@@ -52,6 +52,11 @@ function readFile(path) {
   return content;
 }
 
+/** Concatenate stable entry facades with their canonical module implementations. */
+function readModuleBundle(paths) {
+  return paths.map((rel) => readFile(rel)).join('\n');
+}
+
 /**
  * Normalize CRLF line endings to LF (#1771).
  *
@@ -1350,7 +1355,12 @@ if (absPathLines.length === 0) {
 
 console.log('\n7b. PDF render wait condition');
 
-const generatePdfScript = readFile('generate-pdf.mjs');
+const generatePdfScript = readModuleBundle([
+  'generate-pdf.mjs',
+  'lib/documents/cli.mjs',
+  'lib/documents/html-playwright.mjs',
+  'lib/documents/cv-section-order.mjs',
+]);
 if (/waitUntil:\s*['"]load['"]/.test(generatePdfScript)) {
   pass('generate-pdf waits for load before rendering');
 } else {
@@ -3288,7 +3298,13 @@ if (
 
 console.log('\n9. Local parser contract');
 
-const scanScript = readFile('scan.mjs');
+const scanScript = readModuleBundle([
+  'scan.mjs',
+  'lib/discovery/pipeline.mjs',
+  'lib/discovery/summary.mjs',
+  'lib/discovery/history.mjs',
+  'lib/discovery/dedupe.mjs',
+]);
 if (
   scanScript.includes('typeof entry.name !== \'string\'') &&
   scanScript.includes('entry.name.trim()') &&
@@ -4131,20 +4147,19 @@ try {
   }
 
   const dashboardWriter = readFile('dashboard/internal/data/career.go');
+  const dashboardBridge = readFile('dashboard/internal/data/set_status_bridge.go');
   const dashboardStart = dashboardWriter.indexOf('func UpdateApplicationStatusAndNotes(');
   const dashboardTail = dashboardStart === -1 ? '' : dashboardWriter.slice(dashboardStart);
   const nextDashboardFunction = dashboardTail.indexOf('\nfunc ', 1);
   const dashboardBody = nextDashboardFunction === -1
     ? dashboardTail
     : dashboardTail.slice(0, nextDashboardFunction);
-  const acquireAt = dashboardBody.indexOf('acquireTrackerLock(');
-  const deferredReleaseAt = dashboardBody.indexOf('defer func()');
-  const readAt = dashboardBody.indexOf('os.ReadFile(filePath)');
-  const replaceAt = dashboardBody.indexOf('writeFileAtomic(filePath');
-  if (acquireAt >= 0 && deferredReleaseAt > acquireAt && readAt > deferredReleaseAt
-      && replaceAt > readAt
-      && !/os\.WriteFile\(filePath,\s*\[\]byte\(strings\.Join\(lines/.test(dashboardBody)) {
-    pass('dashboard tracker update structurally holds the lock across read and atomic replacement');
+  if (
+    dashboardBody.includes('runCanonicalTransition(')
+    && dashboardBridge.includes('cli-transition.mjs')
+    && !/os\.WriteFile\(filePath,\s*\[\]byte\(strings\.Join\(lines/.test(dashboardBody)
+  ) {
+    pass('dashboard tracker update delegates to the canonical Node transition bridge');
   } else {
     fail('dashboard tracker update escapes the cross-runtime transaction scope');
   }
@@ -7647,8 +7662,9 @@ try {
   }
   rmSync(unsafeRangeTmp, { recursive: true, force: true });
 
-  const evaluatorSources = ['ollama-eval.mjs', 'openai-eval.mjs', 'gemini-eval.mjs', 'openrouter-runner.mjs']
-    .map(name => [name, readFile(name)]);
+  const evaluatorSources = [
+    ['lib/evaluation/persist.mjs', readFile('lib/evaluation/persist.mjs')],
+  ];
   const unmigratedEvaluators = evaluatorSources
     .filter(([, source]) => !/reservedNumbers\s*=\s*await\s+reserveReportNumbers\s*\(/.test(source)
       || !/await\s+releaseReportNumbers\s*\(\s*reservedNumbers\b/.test(source)
@@ -10440,7 +10456,7 @@ try {
     execFileSync('chmod', ['+x', join(fakeBin, 'claude')]);
   }
 
-  const env = { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH}` };
+  const env = batchRunnerEnv(tmp, fakeBin);
   const out = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--parallel', '1', '--max-retries', '3', '--rate-limit-sleep', '0'], {
     cwd: tmp,
     env,
@@ -10503,6 +10519,16 @@ console.log('\n14. Batch spend_tier model routing');
 // Helper: create a fully isolated tmp fixture for one spend_tier sub-test.
 // Each sub-test gets its own mkdtempSync so no batch-state.tsv from a prior
 // sub-test can bleed in, regardless of OS-level I/O ordering on CI runners.
+function batchRunnerEnv(tmp, fakeBin, argFile = '') {
+  return {
+    ...process.env,
+    PATH: `${fakeBin}${delimiter}${process.env.PATH}`,
+    CAREER_OPS_PROJECT_DIR: ROOT,
+    CAREER_OPS_DATA_ROOT: tmp,
+    ...(argFile ? { BATCH_ARG_FILE: argFile } : {}),
+  };
+}
+
 function makeTierFixture(profileYml) {
   const tmp = mkdtempSync(join(tmpdir(), 'co-batch-tier-'));
   const batchDir = join(tmp, 'batch');
@@ -10545,7 +10571,7 @@ function makeTierFixture(profileYml) {
 try {
   const { tmp, batchDir, fakeBin } = makeTierFixture('spend_tier: economy\n');
   const argFile = join(tmp, 'claude-argv.txt');
-  const env = { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH}`, BATCH_ARG_FILE: argFile };
+  const env = batchRunnerEnv(tmp, fakeBin, argFile);
   const out = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--parallel', '1'], { cwd: tmp, env, stdio: ['pipe', 'pipe', 'pipe'] }) || '';
   const argv = existsSync(argFile) ? readFileSync(argFile, 'utf-8') : '';
   if (argv.includes('--model') && argv.includes('claude-haiku-4-5') && out.includes('spend_tier=economy')) {
@@ -10560,7 +10586,7 @@ try {
 try {
   const { tmp, batchDir, fakeBin } = makeTierFixture('spend_tier: premium\n');
   const argFile = join(tmp, 'claude-argv.txt');
-  const env = { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH}`, BATCH_ARG_FILE: argFile };
+  const env = batchRunnerEnv(tmp, fakeBin, argFile);
   const premiumOut = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--parallel', '1'], { cwd: tmp, env, stdio: ['pipe', 'pipe', 'pipe'] }) || '';
   const premiumArgv = existsSync(argFile) ? readFileSync(argFile, 'utf-8') : '';
   if (premiumArgv.includes('--model') && premiumArgv.includes('claude-opus-5') && premiumOut.includes('spend_tier=premium')) {
@@ -10575,7 +10601,7 @@ try {
 try {
   const { tmp, batchDir, fakeBin } = makeTierFixture('spend_tier: premium\n');
   const argFile = join(tmp, 'claude-argv.txt');
-  const env = { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH}`, BATCH_ARG_FILE: argFile };
+  const env = batchRunnerEnv(tmp, fakeBin, argFile);
   const overrideOut = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--parallel', '1', '--model', 'claude-sonnet-5'], { cwd: tmp, env, stdio: ['pipe', 'pipe', 'pipe'] }) || '';
   const overrideArgv = existsSync(argFile) ? readFileSync(argFile, 'utf-8') : '';
   if (overrideArgv.includes('--model') && overrideArgv.includes('claude-sonnet-5') && !overrideArgv.includes('claude-opus-5') && overrideOut.includes('explicit --model override')) {
@@ -10590,7 +10616,7 @@ try {
 try {
   const { tmp, batchDir, fakeBin } = makeTierFixture('# no spend_tier key\nname: test\n');
   const argFile = join(tmp, 'claude-argv.txt');
-  const env = { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH}`, BATCH_ARG_FILE: argFile };
+  const env = batchRunnerEnv(tmp, fakeBin, argFile);
   const standardDefaultOut = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--parallel', '1'], { cwd: tmp, env, stdio: ['pipe', 'pipe', 'pipe'] }) || '';
   const standardDefaultArgv = existsSync(argFile) ? readFileSync(argFile, 'utf-8') : '';
   if (standardDefaultArgv.includes('--model') && standardDefaultArgv.includes('claude-sonnet-5') && standardDefaultOut.includes('spend_tier=standard')) {
@@ -10605,7 +10631,7 @@ try {
 try {
   const { tmp, batchDir, fakeBin } = makeTierFixture('spend_tier: turbo\n');
   const argFile = join(tmp, 'claude-argv.txt');
-  const env = { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH}`, BATCH_ARG_FILE: argFile };
+  const env = batchRunnerEnv(tmp, fakeBin, argFile);
   const invalidTierOut = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--parallel', '1'], { cwd: tmp, env, stdio: ['pipe', 'pipe', 'pipe'] }) || '';
   const invalidTierArgv = existsSync(argFile) ? readFileSync(argFile, 'utf-8') : '';
   if (invalidTierArgv.includes('--model') && invalidTierArgv.includes('claude-sonnet-5') && invalidTierOut.includes('spend_tier=standard')) {
@@ -10667,13 +10693,13 @@ console.log('\n15. Batch runner MCP isolation');
 
 try {
   const batchRunner = readFileSync(join(ROOT, 'batch', 'batch-runner.sh'), 'utf-8');
+  const batchAdapters = readFile('lib/batch/cli-adapters.mjs');
   // Workers must be spawned with --strict-mcp-config so they don't inherit the
   // parent session's MCP servers (e.g. Playwright) and deadlock fighting over a
   // single browser when --parallel > 1 (issue #506).
-  const claudeArgsLine = batchRunner
-    .split('\n')
-    .find(l => l.includes('claude_args=('));
-  if (claudeArgsLine && claudeArgsLine.includes('--strict-mcp-config')) {
+  const strictInRunner = batchRunner.includes('run-worker.mjs');
+  const strictInAdapters = batchAdapters.includes('--strict-mcp-config');
+  if (strictInRunner && strictInAdapters) {
     pass('batch workers spawn with --strict-mcp-config (no inherited MCP)');
   } else {
     fail('batch-runner.sh worker spawn missing --strict-mcp-config (issue #506 regression)');
@@ -11422,88 +11448,66 @@ try {
   fail(`openrouter-runner prompt-cache test crashed: ${e.message}`);
 }
 
-// ── 44c. openai-eval — host-gated prompt-cache breakpoint (#1709) ────
-// openai-eval.mjs runs on import (arg parse + fetch), so it can't be imported to
-// unit-test the helper — assert the host-gated shape at the source level (same
-// approach updater-migration-tests uses for update-system.mjs).
-console.log('\n44c. openai-eval — host-gated prompt-cache breakpoint (#1709)');
+// ── 44c. openai-compatible adapter — host-gated prompt-cache breakpoint (#1709) ────
+console.log('\n44c. openai-compatible adapter — host-gated prompt-cache breakpoint (#1709)');
 try {
-  const src = readFileSync(join(ROOT, 'openai-eval.mjs'), 'utf-8');
+  const src = readFileSync(join(ROOT, 'lib/llm/adapters/openai-compatible.mjs'), 'utf-8');
   const checks = [
-    // api.openai.com gets a plain-string system message (auto-caches; may reject the field)
-    { name: 'openai-eval gates cache_control off for api.openai.com', re: /host === 'api\.openai\.com'\)\s*return\s*\{\s*role:\s*'system',\s*content:\s*prompt\s*\}/ },
-    // other OpenAI-compatible hosts get the ephemeral cache_control breakpoint, text preserved
-    { name: 'openai-eval sends an ephemeral cache_control breakpoint to compatible gateways', re: /text:\s*prompt,\s*cache_control:\s*\{\s*type:\s*'ephemeral'\s*\}/ },
-    // and it's actually wired into the request, keyed on the resolved endpoint host
-    { name: 'openai-eval builds the system message via buildSystemMessage(systemPrompt, endpointHost)', re: /buildSystemMessage\(systemPrompt,\s*endpointHost\)/ },
+    { name: 'adapter gates cache_control off for api.openai.com', re: /host === 'api\.openai\.com'\)\s*return\s*\{\s*role:\s*'system',\s*content:\s*prompt\s*\}/ },
+    { name: 'adapter sends an ephemeral cache_control breakpoint to compatible gateways', re: /text:\s*prompt,\s*cache_control:\s*\{\s*type:\s*'ephemeral'\s*\}/ },
+    { name: 'adapter builds the system message via buildSystemMessage(systemPrompt, route.endpoint.host', re: /buildSystemMessage\(systemPrompt,\s*route\.endpoint\.host/ },
   ];
   const missing = checks.filter((c) => !c.re.test(src));
-  if (missing.length === 0) pass('openai-eval host-gates the #1709 prompt-cache breakpoint and wires it into the request');
-  else fail(`openai-eval prompt-cache wiring missing: ${missing.map((m) => m.name).join('; ')}`);
+  if (missing.length === 0) pass('openai-compatible adapter host-gates the #1709 prompt-cache breakpoint');
+  else fail(`openai-compatible prompt-cache wiring missing: ${missing.map((m) => m.name).join('; ')}`);
 } catch (e) {
-  fail(`openai-eval prompt-cache source test crashed: ${e.message}`);
+  fail(`openai-compatible prompt-cache source test crashed: ${e.message}`);
 }
 
-// ── 44d. gemini-eval — static prefix as systemInstruction (#1709) ────
-// Gemini has no cache_control field; its implicit prefix caching keys on a
-// stable systemInstruction, so the static context must sit there — not inline in
-// contents. Source-level, since gemini-eval runs on import.
-console.log('\n44d. gemini-eval — static prefix as systemInstruction (#1709)');
+// ── 44d. gemini adapter — static prefix as systemInstruction (#1709) ────
+console.log('\n44d. gemini adapter — static prefix as systemInstruction (#1709)');
 try {
-  const src = readFileSync(join(ROOT, 'gemini-eval.mjs'), 'utf-8');
-  const usesSystemInstruction = /getGenerativeModel\(\{[\s\S]*?systemInstruction:\s*systemPrompt/.test(src);
-  // the per-request call must NOT re-embed the full systemPrompt inline (that
-  // would defeat stable-prefix caching and duplicate the context)
-  const noInlinePrefix = !/generateContent\(\[[\s\S]*?\{\s*text:\s*systemPrompt\s*\}/.test(src);
-  const carriesJdTurn = /generateContent\(`JOB DESCRIPTION TO EVALUATE/.test(src);
-  if (usesSystemInstruction && noInlinePrefix && carriesJdTurn) {
-    pass('gemini-eval moves the static prefix to systemInstruction and sends only the JD turn (#1709)');
+  const src = readFileSync(join(ROOT, 'lib/llm/adapters/gemini.mjs'), 'utf-8');
+  const usesSystemInstruction = /systemInstruction:\s*\{\s*parts:\s*\[\{\s*text:\s*systemPrompt\s*\}\]/.test(src)
+    || /systemInstruction:\s*systemPrompt/.test(src);
+  const carriesJdTurn = /contents:\s*\[\{\s*role:\s*'user'/.test(src);
+  if (usesSystemInstruction && carriesJdTurn) {
+    pass('gemini adapter moves the static prefix to systemInstruction and sends only the JD turn (#1709)');
   } else {
-    fail(`gemini-eval systemInstruction wiring: sys=${usesSystemInstruction} noInline=${noInlinePrefix} jd=${carriesJdTurn}`);
+    fail(`gemini adapter systemInstruction wiring: sys=${usesSystemInstruction} jd=${carriesJdTurn}`);
   }
 } catch (e) {
-  fail(`gemini-eval systemInstruction source test crashed: ${e.message}`);
+  fail(`gemini adapter systemInstruction source test crashed: ${e.message}`);
 }
 
-// ── 44f. openai-tailor — host-gated prompt-cache breakpoint (#1709, #2432) ──
-// openai-tailor.mjs runs on import (arg parse + fetch), so it can't be imported
-// to unit-test the helper — assert the host-gated shape at the source level,
-// same approach as 44c for its sibling openai-eval.mjs.
-console.log('\n44f. openai-tailor — host-gated prompt-cache breakpoint (#1709, #2432)');
+// ── 44f. openai-tailor — buildSystemMessage export (#1709, #2432) ──
+console.log('\n44f. openai-tailor — buildSystemMessage export (#1709, #2432)');
 try {
-  const src = readFileSync(join(ROOT, 'openai-tailor.mjs'), 'utf-8');
-  const checks = [
-    // api.openai.com gets a plain-string system message (auto-caches; may reject the field)
-    { name: 'openai-tailor gates cache_control off for api.openai.com', re: /host === 'api\.openai\.com'\)\s*return\s*\{\s*role:\s*'system',\s*content:\s*prompt\s*\}/ },
-    // other OpenAI-compatible hosts get the ephemeral cache_control breakpoint, text preserved
-    { name: 'openai-tailor sends an ephemeral cache_control breakpoint to compatible gateways', re: /text:\s*prompt,\s*cache_control:\s*\{\s*type:\s*'ephemeral'\s*\}/ },
-    // and it's actually wired into the request, keyed on the resolved endpoint host
-    { name: 'openai-tailor builds the system message via buildSystemMessage(systemPrompt, endpointHost)', re: /buildSystemMessage\(systemPrompt,\s*endpointHost\)/ },
-  ];
-  const missing = checks.filter((c) => !c.re.test(src));
-  if (missing.length === 0) pass('openai-tailor host-gates the #1709 prompt-cache breakpoint and wires it into the request');
-  else fail(`openai-tailor prompt-cache wiring missing: ${missing.map((m) => m.name).join('; ')}`);
-} catch (e) {
-  fail(`openai-tailor prompt-cache source test crashed: ${e.message}`);
-}
-
-// ── 44e. ollama-eval — temperature must live in options ────────
-// Ollama's /api/chat reads generation params from `options` only; a top-level
-// `temperature` is silently ignored (defaulting to 0.8). Assert it sits in
-// options so the eval stays deterministic. Source-level: ollama-eval runs on import.
-console.log('\n44e. ollama-eval — temperature in options');
-try {
-  const src = readFileSync(join(ROOT, 'ollama-eval.mjs'), 'utf-8');
-  const inOptions = /options:\s*\{[^}]*temperature:\s*0\.4[^}]*num_ctx/.test(src);
-  // must NOT set a top-level temperature in the request body (silently ignored)
-  const noTopLevel = !/\n\s*temperature:\s*0\.4,\s*\n\s*options:/.test(src);
-  if (inOptions && noTopLevel) {
-    pass('ollama-eval sets temperature inside options (not silently ignored at the top level)');
+  const { buildSystemMessage } = await import('./openai-tailor.mjs');
+  const openaiMsg = buildSystemMessage('prefix', 'api.openai.com');
+  const routerMsg = buildSystemMessage('prefix', 'openrouter.ai');
+  if (typeof openaiMsg.content === 'string' && Array.isArray(routerMsg.content)) {
+    pass('openai-tailor facade exposes buildSystemMessage with host-gated cache_control');
   } else {
-    fail(`ollama-eval temperature placement: inOptions=${inOptions} noTopLevel=${noTopLevel}`);
+    fail(`openai-tailor buildSystemMessage host gating regressed: openai=${typeof openaiMsg.content} router=${Array.isArray(routerMsg.content)}`);
   }
 } catch (e) {
-  fail(`ollama-eval temperature test crashed: ${e.message}`);
+  fail(`openai-tailor buildSystemMessage export test crashed: ${e.message}`);
+}
+
+// ── 44e. ollama — temperature must live in options ────────
+console.log('\n44e. ollama adapter — temperature in options');
+try {
+  const src = readFileSync(join(ROOT, 'lib/llm/adapters/openai-compatible.mjs'), 'utf-8');
+  const inOptions = /options:\s*\{[^}]*temperature:\s*generation\.temperature[^}]*num_ctx/.test(src);
+  const noTopLevelWhenOllama = /isOllama[\s\S]*options:/.test(src);
+  if (inOptions && noTopLevelWhenOllama) {
+    pass('ollama route sets temperature inside options (not silently ignored at the top level)');
+  } else {
+    fail(`ollama temperature placement: inOptions=${inOptions} gated=${noTopLevelWhenOllama}`);
+  }
+} catch (e) {
+  fail(`ollama temperature test crashed: ${e.message}`);
 }
 
 // ── 45. SCAN COOLDOWN FILTER ──────────────────────────────────
@@ -12578,14 +12582,9 @@ try {
   fail(`_http.mjs error message tests crashed: ${e.message}`);
 }
 
-// ── 55. CORE↔WEB CONTRACT FREEZE ────────────────────────────────
-// The first-party web (web/) READS these exact core formats. This section
-// freezes each surface's canonical shape: a PR that changes a surface must
-// ALSO edit these assertions, which makes the change loud in the diff and
-// forces the web-coordination step (prefer ADDITIVE — append new columns/
-// statuses/blocks at the end; renaming, removing or reordering is BREAKING
-// and needs the web updated in lockstep).
-console.log('\n55. Core↔web contract freeze');
+// ── 55. CORE DATA CONTRACT FREEZE ───────────────────────────────
+// Freezes canonical core data shapes consumed by CLI, hosted dashboard, and Go TUI.
+console.log('\n55. Core data contract freeze');
 try {
   // 55.1 tracker header (tracker.mjs HEADER → web readApplications)
   const trackerSrc = readFileSync(join(ROOT, 'tracker.mjs'), 'utf-8');
@@ -12593,16 +12592,16 @@ try {
   if (trackerSrc.includes(CANONICAL_TRACKER_HEADER)) {
     pass('tracker.mjs writes the canonical 9-col applications.md header');
   } else {
-    fail('tracker.mjs no longer writes the canonical 9-col header — BREAKING for the web reader; coordinate web/ in lockstep');
+    fail('tracker.mjs no longer writes the canonical 9-col header — BREAKING for tracker consumers; coordinate dashboard-web in lockstep');
   }
 
   // 55.2 scan-history.tsv header prefix (scan.mjs → web whats-new + first_seen map)
-  const scanSrc = readFileSync(join(ROOT, 'scan.mjs'), 'utf-8');
+  const scanSrc = readModuleBundle(['scan.mjs', 'lib/discovery/history.mjs']);
   const SCAN_HISTORY_PREFIX = 'url\\tfirst_seen\\tportal\\ttitle\\tcompany\\tstatus\\tlocation';
   if (scanSrc.includes(SCAN_HISTORY_PREFIX)) {
     pass('scan.mjs scan-history.tsv header keeps the canonical 7-col prefix (append-only beyond it)');
   } else {
-    fail('scan.mjs scan-history.tsv header prefix changed — BREAKING for web readers; appending new columns at the END is the additive path');
+    fail('scan.mjs scan-history.tsv header prefix changed — BREAKING for scan consumers; appending new columns at the END is the additive path');
   }
 
   // 55.3 canonical statuses (templates/states.yml → web status pills/actions)
@@ -12619,358 +12618,28 @@ try {
   if (missingStates.length === 0) {
     pass('templates/states.yml keeps every canonical status id (new ids may be appended)');
   } else {
-    fail(`templates/states.yml lost canonical status id(s): ${missingStates.join(', ')} — BREAKING for the web status mapping`);
+    fail(`templates/states.yml lost canonical status id(s): ${missingStates.join(', ')} — BREAKING for hosted dashboard state mapping`);
   }
 
-  // 55.3b Every web status list must carry every canonical state. states.yml is
-  // the source of truth; the web keeps SIX hardcoded copies (title-case canonical
-  // lists + UPPERCASE tab/stage lists). `Hired` (#2050) had silently drifted out
-  // of ALL of them — a landed job was unsettable, uncounted in the funnel, and a
-  // gray "unknown" dot (#2249). Cross-check each so a future core state can't
-  // vanish from the dashboard again. The analytics funnel intentionally omits
-  // SKIP (not a funnel stage), so it's excluded there.
-  const stateLabels = [...statesSrc.matchAll(/^\s+label:\s*"?([A-Za-z]+)"?\s*$/gm)].map((m) => m[1]);
-  const webStatusLists = [
-    { file: 'web/src/lib/format.ts', re: /CANONICAL_STATES\s*=\s*\[([\s\S]*?)\]/, upper: false, exclude: [] },
-    { file: 'web/src/app/actions/registry.ts', re: /CANON_STATUS\s*=\s*\[([\s\S]*?)\]/, upper: false, exclude: [] },
-    { file: 'web/src/app/actions/registry.ts', re: /TAB_VALUES\s*=\s*\[([\s\S]*?)\]/, upper: true, exclude: [] },
-    { file: 'web/src/components/pipeline-view.tsx', re: /TABS\s*=\s*\[([\s\S]*?)\]/, upper: true, exclude: [] },
-    { file: 'web/src/app/analytics/page.tsx', re: /STAGES[^=]*=\s*\[([\s\S]*?)\];/, upper: true, exclude: ['SKIP'] },
-    // 55.3b+ the degraded-path FALLBACK in the states ACL (career-ops-ui's find, #2282):
-    // it promises to mirror states.yml and drifted to 8 states while the live path had 9.
-    { file: 'web/src/lib/core/states.ts', re: /const FALLBACK[^=]*=\s*\[([\s\S]*?)\n\];/, upper: false, exclude: [] },
-  ];
-  if (stateLabels.length > 0) {
-    const drift = [];
-    for (const { file, re, upper, exclude } of webStatusLists) {
-      const p = join(ROOT, file);
-      if (!existsSync(p)) continue;
-      const block = readFileSync(p, 'utf-8').match(re)?.[1] ?? '';
-      const present = new Set([...block.matchAll(/"([A-Za-z]+)"/g)].map((m) => m[1]));
-      const want = (upper ? stateLabels.map((l) => l.toUpperCase()) : stateLabels).filter((l) => !exclude.includes(l));
-      const missing = want.filter((l) => !present.has(l));
-      if (missing.length) drift.push(`${file} (${missing.join(', ')})`);
-    }
-    if (drift.length === 0) {
-      pass('every web status list covers all canonical states from states.yml (#2249)');
-    } else {
-      fail(`web status list(s) missing canonical state(s) — dashboard can't set/count them (#2249): ${drift.join(' | ')}`);
-    }
-
-    // The assistant preamble also enumerates the states in PROSE (the setStatus
-    // list + the filterPipeline tab enum). Those drift the same way — the AI
-    // couldn't offer to set/filter by Hired — so check them too (#2249).
-    const assistantPath = join(ROOT, 'web', 'src', 'app', 'api', 'assistant', 'route.ts');
-    if (existsSync(assistantPath)) {
-      const src = readFileSync(assistantPath, 'utf-8');
-      const proseChecks = [
-        { name: 'setStatus canonical-states list', text: src.match(/Canonical states:\s*([^.]*)\./)?.[1] ?? '', upper: false },
-        { name: 'filterPipeline tab enum', text: src.match(/tab ∈\s*([^;]*);/)?.[1] ?? '', upper: true },
-      ];
-      const proseDrift = [];
-      for (const { name, text, upper } of proseChecks) {
-        const want = upper ? stateLabels.map((l) => l.toUpperCase()) : stateLabels;
-        const missing = want.filter((l) => !new RegExp(`\\b${l}\\b`).test(text));
-        if (missing.length) proseDrift.push(`${name} (${missing.join(', ')})`);
-      }
-      if (proseDrift.length === 0) {
-        pass('assistant preamble prose enumerates every canonical state (#2249)');
-      } else {
-        fail(`assistant preamble missing canonical state(s) in prose (#2249): ${proseDrift.join(' | ')}`);
-      }
-    }
+  // 55.3b Legacy web/ status/cadence/doctor freezes retired — dashboard-web owns
+  // hosted parity (state-service.test.js, workload-runner.test.js, route tests).
+  if (existsSync(join(ROOT, 'dashboard-web'))) {
+    pass('hosted dashboard contract checks live in dashboard-web/test (legacy web/ freezes removed)');
+  } else {
+    warn('dashboard-web/ not found — hosted contract checks unavailable in this checkout');
   }
 
-  // 55.3c the web's hand-copied cadence baseline must match the core's defaults.
-  // web/src/lib/followups.ts keeps CADENCE_DEFAULTS "kept IDENTICAL to
-  // DEFAULT_CADENCE" by comment alone — the same wish that let states.ts's
-  // FALLBACK drift (#2282). Web keys carry a `_days` suffix (except
-  // applied_max_followups); compare values under that mapping. Until #2369
-  // replaces the copy with the --json cadenceConfig, CI is the invariant.
-  {
-    const coreCad = readFileSync(join(ROOT, 'followup-cadence.mjs'), 'utf-8')
-      .match(/export const DEFAULT_CADENCE = \{([\s\S]*?)\};/)?.[1] ?? '';
-    const webCadPath = join(ROOT, 'web', 'src', 'lib', 'followups.ts');
-    if (coreCad && existsSync(webCadPath)) {
-      const webCad = readFileSync(webCadPath, 'utf-8')
-        .match(/CADENCE_DEFAULTS[^=]*=\s*\{([\s\S]*?)\};/)?.[1] ?? '';
-      const pairs = (block) => Object.fromEntries(
-        [...block.matchAll(/([a-z_]+):\s*(\d+)/g)].map((m) => [m[1], Number(m[2])]));
-      const core = pairs(coreCad);
-      const web = pairs(webCad);
-      const cadDrift = [];
-      for (const [k, v] of Object.entries(core)) {
-        const webKey = k === 'applied_max_followups' ? k : `${k}_days`;
-        if (!(webKey in web)) cadDrift.push(`${webKey} missing in web`);
-        else if (web[webKey] !== v) cadDrift.push(`${webKey}=${web[webKey]} vs core ${k}=${v}`);
-      }
-      if (Object.keys(web).length !== Object.keys(core).length) {
-        cadDrift.push(`key count ${Object.keys(web).length} vs core ${Object.keys(core).length}`);
-      }
-      if (cadDrift.length === 0) {
-        pass('web CADENCE_DEFAULTS matches core DEFAULT_CADENCE under the _days mapping (#2369)');
-      } else {
-        fail(`web cadence baseline drifted from followup-cadence.mjs (#2369): ${cadDrift.join(' | ')}`);
-      }
-    }
-  }
-
-  // 55.3d the web onboarding banner's prereq list must match doctor.mjs.
-  // doctorState() in web/src/lib/career-ops.ts hand-copies USER_LAYER_PREREQS
-  // as a deliberate fast-path (server components can't execFile doctor per
-  // render) — if the core gains a fifth prereq, the banner silently stops
-  // asking for it and the user believes they're configured. Same mechanism as
-  // #2282, different symptom (career-ops-ui's census, 31-jul).
-  {
-    const corePrereqBlock = readFileSync(join(ROOT, 'doctor.mjs'), 'utf-8')
-      .match(/const USER_LAYER_PREREQS = \[([\s\S]*?)\n\];/)?.[1] ?? '';
-    const corePrereqs = [...corePrereqBlock.matchAll(/path:\s*'([^']+)'/g)].map((m) => m[1]);
-    const webDoctorPath = join(ROOT, 'web', 'src', 'lib', 'career-ops.ts');
-    if (corePrereqs.length > 0 && existsSync(webDoctorPath)) {
-      const webPrereqBlock = readFileSync(webDoctorPath, 'utf-8')
-        .match(/const prereqs[^=]*=\s*\[([\s\S]*?)\n\s*\];/)?.[1] ?? '';
-      const webPrereqs = new Set([...webPrereqBlock.matchAll(/\[\s*"([^"]+)"/g)].map((m) => m[1]));
-      const missingPrereqs = corePrereqs.filter((p) => !webPrereqs.has(p));
-      if (missingPrereqs.length === 0 && webPrereqs.size === corePrereqs.length) {
-        pass('web doctorState prereqs match doctor.mjs USER_LAYER_PREREQS (#2369)');
-      } else {
-        fail(`web onboarding prereqs drifted from doctor.mjs (#2369): missing=[${missingPrereqs.join(', ')}] webCount=${webPrereqs.size} coreCount=${corePrereqs.length}`);
-      }
-    }
-  }
-
-  // 55.4 report format blocks (modes/oferta.md → web report parser)
+  // 55.4 report format blocks (modes/oferta.md → evaluation + report parsers)
   const ofertaSrc = readFileSync(join(ROOT, 'modes', 'oferta.md'), 'utf-8');
   const REPORT_BLOCKS = ['Block A', 'Block B', 'Block C', 'Block D', 'Block E', 'Block F', 'Block G'];
   const missingBlocks = REPORT_BLOCKS.filter((b) => !ofertaSrc.includes(`## ${b} `));
   if (missingBlocks.length === 0) {
     pass('modes/oferta.md keeps the A-G report block structure (new blocks may be appended)');
   } else {
-    fail(`modes/oferta.md lost report block(s): ${missingBlocks.join(', ')} — BREAKING for the web report view`);
-  }
-
-  // 55.5 cross-check: the web parser still speaks the same column names
-  const webParserPath = join(ROOT, 'web', 'src', 'lib', 'career-ops.ts');
-  if (existsSync(webParserPath)) {
-    const webSrc = readFileSync(webParserPath, 'utf-8');
-    const ESSENTIAL_COLS = ['Company', 'Role', 'Score', 'Status'];
-    const missingCols = ESSENTIAL_COLS.filter((c) => !webSrc.toLowerCase().includes(c.toLowerCase()));
-    if (missingCols.length === 0) {
-      pass('web/src/lib/career-ops.ts still references the essential tracker columns');
-    } else {
-      fail(`web parser no longer references column(s): ${missingCols.join(', ')} — core and web drifted`);
-    }
-  } else {
-    warn('web/src/lib/career-ops.ts not found — web layer moved? update contract freeze section');
-  }
-
-  // 55.6 pdf mode must never hand the agent write access (#2185).
-  // The web's "pdf" agent tailors content and nothing else: it emits the CV
-  // through a <<cv-html>> envelope and the BACKEND writes every file. A write
-  // grant here would be unscoped, so a prompt injection in a posting or report
-  // (both enter that agent's context) could redirect it at cv.md.
-  //
-  // Asserted on VALUES — the built argv and the built prompt. FIVE source-text
-  // versions of this guard were defeated by rewriting route.ts around them (see
-  // web/src/lib/claude-invocation.mjs's header). The one structural rule left is
-  // that route.ts may not spell a tool flag itself, which is what stops an inline
-  // argv from hiding beside a legitimate claudeCliArgs() call.
-  //
-  // In the REQUIRED suite on purpose: web-ci.yml is informative-only, so asserting
-  // this only there would gate nothing. Importing is safe — these are
-  // dependency-free ESM modules and the root suite runs on Node >= 18.
-  const webLib = join(ROOT, 'web', 'src', 'lib');
-  const runRoutePath = join(ROOT, 'web', 'src', 'app', 'api', 'run', 'route.ts');
-  if (!existsSync(webLib)) {
-    // Expected for a data-only install: web/ is in no SYSTEM_PATHS entry.
-    warn('web/ not present in this checkout — skipping the pdf write-scope freeze (#2185)');
-  } else {
-    // web/ IS here, so a missing file means a move, not an absence — fail rather
-    // than skip, because a skip is how this freeze would silently stop guarding.
-    const required = {
-      'claude-invocation.mjs': join(webLib, 'claude-invocation.mjs'),
-      'cv-envelope.mjs': join(webLib, 'cv-envelope.mjs'),
-      'run-prompts.mjs': join(webLib, 'run-prompts.mjs'),
-      'api/run/route.ts': runRoutePath,
-    };
-    const missing = Object.entries(required).filter(([, f]) => !existsSync(f)).map(([name]) => name);
-    if (missing.length > 0) {
-      fail(`web/ exists but ${missing.join(', ')} is missing — the #2185 write-scope freeze cannot verify (was it moved?)`);
-    } else {
-      let invocation;
-      let prompts;
-      try {
-        invocation = await import(pathToFileURL(required['claude-invocation.mjs']).href);
-        prompts = await import(pathToFileURL(required['run-prompts.mjs']).href);
-        // Imported for its side effect of resolving: run-prompts pulls cv-envelope
-        // for CV_ENVELOPE_INSTRUCTION, so a break there would surface here anyway,
-        // but naming it keeps the failure message specific.
-        await import(pathToFileURL(required['cv-envelope.mjs']).href);
-      } catch (err) {
-        fail(`web pdf write-scope modules could not be imported (${err.message}) — the #2185 freeze cannot verify`);
-      }
-      // Gate the web unit suites from the REQUIRED check too. web-ci.yml is
-      // informative-only, so without this a contributor strengthening those files
-      // adds nothing to CI. This deliberately overlaps the value assertions below:
-      // those give a named, greppable #2185 signal and still hold if the web suite
-      // is ever trimmed, which is the failure this section exists to catch.
-      // Discovered, not hand-listed: a list silently stops gating whatever is added
-      // next, and this section previously covered 4 of the 6 files present.
-      let webUnits = [];
-      try {
-        webUnits = readdirSync(join(ROOT, 'web', 'tests', 'lib'))
-          .filter((f) => f.endsWith('.test.mjs'))
-          .sort()
-          .map((f) => `web/tests/lib/${f}`);
-      } catch (err) {
-        // Fail rather than throw to the outer catch, which would skip every value
-        // assertion below while reporting only "freeze section crashed".
-        fail(`web/tests/lib is unreadable (${err.message}) — the #2185 unit suites cannot be gated`);
-      }
-      // Three distinct states, so the message never misdescribes the failure: the
-      // unreadable case already called fail() above, an empty directory is its own
-      // fault, and only a non-empty list is actually run.
-      if (webUnits.length === 0) {
-        if (existsSync(join(ROOT, 'web', 'tests', 'lib'))) {
-          fail('web/tests/lib contains no *.test.mjs — the #2185 unit suites are not being gated');
-        }
-      } else if (run(NODE, ['--test', ...webUnits], { timeout: 180000 }) !== null) {
-        pass('web pdf write-scope unit suites pass (#2185)');
-      } else {
-        // The signal distinguishes a timeout/kill from an assertion failure —
-        // run()'s default 30s is short for six suites in one child process.
-        const killed = lastRunFailure()?.signal;
-        fail(`web pdf write-scope unit suites failed${killed ? ` (killed: ${killed})` : ''} (run: node --test ${webUnits.join(' ')})`);
-      }
-
-      if (invocation && prompts) {
-        const { claudeCliArgs, argValue, toolNames, grantsWriteCapability, WRITE_CAPABLE_TOOLS } = invocation;
-        const pdfArgs = claudeCliArgs({ kind: 'pdf', prompt: 'freeze-probe' });
-        const allowed = argValue(pdfArgs, '--allowedTools');
-        const disallowed = argValue(pdfArgs, '--disallowedTools');
-
-        if (!grantsWriteCapability({ allowed, disallowed })) {
-          pass('web pdf command line grants no write-capable tool (#2185)');
-        } else {
-          const granted = WRITE_CAPABLE_TOOLS.filter((t) => toolNames(allowed).includes(t));
-          fail(`web pdf command line grants write access via ${granted.join(', ')} — an unscoped write grant is the #2185 hole`);
-        }
-
-        // Denied by name, not merely omitted: --permission-mode acceptEdits exists
-        // to auto-approve edit tools, so "unmentioned" is the one status a
-        // file-writing tool must never have.
-        const undenied = WRITE_CAPABLE_TOOLS.filter((t) => !toolNames(disallowed).includes(t));
-        if (undenied.length === 0) {
-          pass('web pdf command line explicitly denies every write-capable tool (#2185)');
-        } else {
-          fail(`web pdf command line no longer denies ${undenied.join(', ')} — #2172/#2185 guardrail weakened`);
-        }
-
-        // EVERY kind, not just pdf: a write tool that is neither allowed nor denied
-        // can still be auto-approved by --permission-mode acceptEdits, and a
-        // pdf-only probe let exactly that ship for the persisting kinds.
-        const unmentioned = [];
-        for (const kind of invocation.KNOWN_KINDS) {
-          const scope = invocation.toolScopeFor(kind);
-          const named = [...toolNames(scope.allowed), ...toolNames(scope.disallowed)];
-          for (const tool of WRITE_CAPABLE_TOOLS) {
-            if (!named.includes(tool)) unmentioned.push(`${kind}:${tool}`);
-          }
-        }
-        if (unmentioned.length === 0) {
-          pass('web tool scopes leave no write-capable tool unmentioned for any kind (#2185)');
-        } else {
-          fail(`web tool scopes leave ${unmentioned.join(', ')} neither allowed nor denied — acceptEdits may auto-approve them (#2185)`);
-        }
-
-        // The PROMPT is asserted by run-prompts.test.mjs, which this section already
-        // runs above — restating its regexes here would be two copies of one intent.
-        // What is checked here is only what that suite cannot see: that the shipped
-        // prompt is the one the route actually sends (below).
-        // The one structural rule: the route delegates its argv. If it spells any
-        // tool flag itself, an inline pdf arm could grant writes while every value
-        // check above still describes claudeCliArgs's untouched output.
-        // Strip comments with a scanner that respects string and template literals.
-        // A `.replace(/\/\/.*$/, '')` per line also fires inside strings: a URL on the
-        // same line as a tool flag deletes the flag, so a route spelling its own
-        // --allowedTools would pass unnoticed. Only `//` OUTSIDE a literal is a comment.
-        const stripJsComments = (src) => {
-          let out = '';
-          let quote = null;   // "'" | '"' | '`' when inside a literal
-          let block = false;  // inside a /* */ comment
-          let line = false;   // inside a // comment
-          for (let i = 0; i < src.length; i++) {
-            const c = src[i];
-            const next = src[i + 1];
-            if (line) { if (c === '\n') { line = false; out += c; } continue; }
-            if (block) { if (c === '*' && next === '/') { block = false; i++; } continue; }
-            if (quote) {
-              // A backslash escapes the next character, so an escaped quote does not
-              // close the literal and an escaped backslash does not escape what follows.
-              if (c === '\\') { out += c + (next ?? ''); i++; continue; }
-              if (c === quote) quote = null;
-              out += c;
-              continue;
-            }
-            if (c === '/' && next === '/') { line = true; continue; }
-            if (c === '/' && next === '*') { block = true; i++; continue; }
-            // A `/` here can also open a REGEX literal, and a quote inside one (say
-            // /["']/) would otherwise flip the scanner into string state and swallow
-            // the rest of the file. Distinguish regex from division the usual way:
-            // regex can only follow an operator or an opener, never a value.
-            if (c === '/') {
-              const prev = out.replace(/\s+$/, '').slice(-1);
-              if (prev === '' || '(,=:[!&|?{};+-*%~^<>'.includes(prev)) {
-                out += c;
-                for (i++; i < src.length; i++) {
-                  const r = src[i];
-                  out += r;
-                  if (r === '\\') { out += src[i + 1] ?? ''; i++; continue; }
-                  if (r === '[') { // a class can contain an unescaped `/`
-                    for (i++; i < src.length && src[i] !== ']'; i++) {
-                      out += src[i];
-                      if (src[i] === '\\') { out += src[i + 1] ?? ''; i++; }
-                    }
-                    out += src[i] ?? '';
-                    continue;
-                  }
-                  if (r === '/' || r === '\n') break;
-                }
-                continue;
-              }
-            }
-            if (c === '"' || c === "'" || c === '`') { quote = c; out += c; continue; }
-            out += c;
-          }
-          return out;
-        };
-        const routeCode = stripJsComments(readFileSync(runRoutePath, 'utf-8'))
-          .split('\n')
-          .filter((l) => !/^\s*import\b/.test(l))
-          .join('\n');
-        const spelledFlags = ['--allowedTools', '--disallowedTools', '--permission-mode']
-          .filter((flag) => routeCode.includes(flag));
-        const argvCallSites = (routeCode.match(/claudeCliArgs\s*\(/g) ?? []).length;
-        // `kind` must reach claudeCliArgs as a SHORTHAND property. Property order
-        // and line wrapping are free, but `{ kind: <anything> }` is refused:
-        // `claudeCliArgs({ kind: kind === "pdf" ? "evaluate" : kind, prompt })`
-        // once passed every check while pdf received the persisting scope.
-        const passesKindVerbatim = /claudeCliArgs\s*\(\s*\{(?:[^{}]*,)?\s*kind\s*[,}]/.test(routeCode);
-        if (spelledFlags.length === 0 && argvCallSites === 1 && passesKindVerbatim) {
-          pass('web run route delegates its whole argv, spelling no tool flag and remapping no kind (#2185)');
-        } else {
-          const why = spelledFlags.length > 0
-            ? `it spells ${spelledFlags.join(', ')} itself`
-            : argvCallSites !== 1
-              ? `it builds argv at ${argvCallSites} site(s), expected exactly 1`
-              : 'it does not pass `kind` through verbatim (a remapped kind hands pdf another kind\'s scope)';
-          fail(`web run route no longer delegates its argv — ${why}, so the value checks above may not describe what pdf actually ships (#2185)`);
-        }
-      }
-    }
+    fail(`modes/oferta.md lost report block(s): ${missingBlocks.join(', ')} — BREAKING for evaluation and report parsers`);
   }
 } catch (e) {
-  fail(`core↔web contract freeze section crashed: ${e.message}`);
+  fail(`core data contract freeze section crashed: ${e.message}`);
 }
 
 // ── 55b. OFFER-PREP POSTURE FREEZE (#1634) ──────────────────────

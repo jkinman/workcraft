@@ -5,8 +5,8 @@
  *
  * Tests whether job posting URLs are still active or have expired.
  * Uses the same detection logic as scan.md step 7.5.
- * Zero Claude API tokens. Two rungs: a free ATS API check first
- * (Greenhouse/Lever — no browser), then Playwright for everything else.
+ * Zero Claude API tokens. Playwright browser snapshot is the final authority;
+ * ATS API responses are preflight hints only.
  *
  * Usage:
  *   node check-liveness.mjs <url1> [url2] ...
@@ -15,27 +15,14 @@
  * Exit code: 0 if all active, 1 if any expired or uncertain
  */
 
-import { chromium } from 'playwright';
 import { readFile } from 'fs/promises';
-import {
-  checkUrlLivenessWithFallback,
-  createHeadedPageProvider,
-  newLivenessPage,
-  jitteredDelayMs,
-  sleep,
-} from './liveness-browser.mjs';
-import { checkLivenessViaApi } from './liveness-api.mjs';
+import { createLivenessSession } from './lib/discovery/liveness/index.mjs';
+import { jitteredDelayMs, sleep } from './lib/discovery/liveness/browser.mjs';
 
 async function main() {
   const args = process.argv.slice(2);
 
-  // Portals like pracuj.pl serve a Cloudflare anti-bot wall to headless Chromium.
-  // On a challenge we retry once in a headed browser (which clears it); pass
-  // --no-fallback to stay fully headless (e.g. on a machine with no display).
   const noFallback = args.includes('--no-fallback');
-  // --throttle or --throttle=<ms>: wait base..2*base ms (jittered) between checks
-  // to stay under rate-based WAF limits. pracuj.pl's Cloudflare flags the session
-  // after ~2 rapid hits, so a bulk run needs spacing. Default base 5000ms.
   const throttleArg = args.find((a) => a === '--throttle' || a.startsWith('--throttle='));
   const throttleBaseMs = throttleArg ? (Number(throttleArg.split('=')[1]) || 5000) : 0;
   const positional = args.filter((a) => a !== '--no-fallback' && a !== throttleArg);
@@ -60,52 +47,36 @@ async function main() {
   ].filter(Boolean);
   console.log(`Checking ${urls.length} URL(s)...${notes.length ? ` (${notes.join(', ')})` : ''}\n`);
 
-  // Lazy browser: the API rung resolves ATS postings with no browser at all, so we
-  // only launch Playwright if a URL actually needs the fallback.
-  let browser = null, page = null, headed = null;
-  async function ensureBrowser() {
-    if (browser) return;
-    browser = await chromium.launch({ headless: true });
-    page = await newLivenessPage(browser);
-    headed = noFallback ? null : createHeadedPageProvider(chromium);
-  }
+  const session = createLivenessSession({
+    headedFallback: !noFallback,
+    throttleBaseMs,
+  });
 
-  let active = 0, expired = 0, uncertain = 0, viaApi = 0;
+  let active = 0, expired = 0, uncertain = 0, apiHints = 0;
 
-  // Sequential — project rule: never Playwright in parallel
-  for (let i = 0; i < urls.length; i++) {
-    const url = urls[i];
-    let result, reason, usedBrowser = false;
+  try {
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+      const { result, reason, apiHint } = await session.checkPosting(url);
+      if (apiHint) apiHints++;
 
-    // Rung 1: zero-token ATS API check. A conclusive active/expired wins; otherwise fall through.
-    const api = await checkLivenessViaApi(url);
-    if (api) {
-      ({ result, reason } = api);
-      viaApi++;
-    } else {
-      // Rung 2: Playwright — handles non-ATS pages and inconclusive API results.
-      await ensureBrowser();
-      const getHeadedPage = headed ? () => headed.get() : undefined;
-      ({ result, reason } = await checkUrlLivenessWithFallback(page, url, { getHeadedPage }));
-      usedBrowser = true;
+      const icon = { active: '✅', expired: '❌', uncertain: '⚠️' }[result];
+      const hintTag = apiHint ? `(api hint: ${apiHint.result}) ` : '';
+      console.log(`${icon} ${result.padEnd(10)} ${hintTag}${url}`);
+      if (result !== 'active') console.log(`           ${reason}`);
+      if (result === 'active') active++;
+      else if (result === 'expired') expired++;
+      else uncertain++;
+
+      if (i < urls.length - 1 && throttleBaseMs) {
+        await sleep(jitteredDelayMs(throttleBaseMs));
+      }
     }
-
-    const icon = { active: '✅', expired: '❌', uncertain: '⚠️' }[result];
-    console.log(`${icon} ${result.padEnd(10)} ${api ? '(api) ' : '      '}${url}`);
-    if (result !== 'active') console.log(`           ${reason}`);
-    if (result === 'active') active++;
-    else if (result === 'expired') expired++;
-    else uncertain++;
-
-    // Throttle only matters between browser checks (the API is cheap, not WAF-rate-limited).
-    const wait = usedBrowser && i < urls.length - 1 ? jitteredDelayMs(throttleBaseMs) : 0;
-    if (wait) await sleep(wait);
+  } finally {
+    await session.close();
   }
 
-  if (headed) await headed.close();
-  if (browser) await browser.close();
-
-  console.log(`\nResults: ${active} active  ${expired} expired  ${uncertain} uncertain  (${viaApi} via API, no browser)`);
+  console.log(`\nResults: ${active} active  ${expired} expired  ${uncertain} uncertain  (${apiHints} API preflight hint(s), browser verdict)`);
   if (expired > 0 || uncertain > 0) process.exit(1);
 }
 

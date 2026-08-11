@@ -13,17 +13,22 @@ function makeFakeJobsClient() {
     return { ...row, payload: { ...row.payload }, result: row.result ? { ...row.result } : null };
   }
 
+  function leaseAgeMs(row, nowMs) {
+    const heartbeat = row.heartbeat_at ? new Date(row.heartbeat_at).getTime() : 0;
+    const claimed = row.claimed_at ? new Date(row.claimed_at).getTime() : 0;
+    const leaseAt = Math.max(heartbeat, claimed);
+    return leaseAt > 0 ? nowMs - leaseAt : 0;
+  }
+
   function claimNext(pWorkerId, pStaleSeconds = DEFAULT_STALE_SECONDS) {
     const now = Date.now();
     for (const row of rows.values()) {
-      if (row.status === 'running' && row.claimed_at) {
-        const claimedAt = new Date(row.claimed_at).getTime();
-        if (now - claimedAt > pStaleSeconds * 1000) {
-          row.status = 'queued';
-          row.worker_id = null;
-          row.claimed_at = null;
-          row.updated_at = new Date().toISOString();
-        }
+      if (row.status === 'running' && leaseAgeMs(row, now) > pStaleSeconds * 1000) {
+        row.status = 'queued';
+        row.worker_id = null;
+        row.claimed_at = null;
+        row.heartbeat_at = null;
+        row.updated_at = new Date().toISOString();
       }
     }
 
@@ -37,23 +42,61 @@ function makeFakeJobsClient() {
     row.status = 'running';
     row.worker_id = pWorkerId;
     row.claimed_at = new Date().toISOString();
+    row.heartbeat_at = row.claimed_at;
     row.updated_at = row.claimed_at;
     return [rowSnapshot(row)];
+  }
+
+  function completeJob(pJobId, pWorkerId, pResult = {}) {
+    const row = rows.get(pJobId);
+    if (!row || row.worker_id !== pWorkerId || row.status !== 'running') return [];
+    row.status = 'completed';
+    row.result = pResult;
+    row.error = null;
+    row.completed_at = new Date().toISOString();
+    row.updated_at = row.completed_at;
+    return [rowSnapshot(row)];
+  }
+
+  function failJob(pJobId, pWorkerId, pError, pBackoffSeconds = 30) {
+    const row = rows.get(pJobId);
+    if (!row || row.worker_id !== pWorkerId || row.status !== 'running') return [];
+    row.retry_count += 1;
+    row.error = pError;
+    if (row.retry_count >= row.max_retries) {
+      row.status = 'dead_letter';
+      row.completed_at = new Date().toISOString();
+      row.worker_id = null;
+    } else {
+      row.status = 'queued';
+      row.worker_id = null;
+      row.claimed_at = null;
+      row.heartbeat_at = null;
+      row.next_retry_at = new Date(Date.now() + pBackoffSeconds * row.retry_count * 1000).toISOString();
+    }
+    row.updated_at = new Date().toISOString();
+    return [rowSnapshot(row)];
+  }
+
+  function renewLease(pJobId, pWorkerId) {
+    const row = rows.get(pJobId);
+    if (!row || row.worker_id !== pWorkerId || row.status !== 'running') return false;
+    row.heartbeat_at = new Date().toISOString();
+    row.updated_at = row.heartbeat_at;
+    return true;
   }
 
   function reclaimStale(pStaleSeconds = DEFAULT_STALE_SECONDS) {
     const now = Date.now();
     let affected = 0;
     for (const row of rows.values()) {
-      if (row.status === 'running' && row.claimed_at) {
-        const claimedAt = new Date(row.claimed_at).getTime();
-        if (now - claimedAt > pStaleSeconds * 1000) {
-          row.status = 'queued';
-          row.worker_id = null;
-          row.claimed_at = null;
-          row.updated_at = new Date().toISOString();
-          affected += 1;
-        }
+      if (row.status === 'running' && leaseAgeMs(row, now) > pStaleSeconds * 1000) {
+        row.status = 'queued';
+        row.worker_id = null;
+        row.claimed_at = null;
+        row.heartbeat_at = null;
+        row.updated_at = new Date().toISOString();
+        affected += 1;
       }
     }
     return affected;
@@ -113,7 +156,12 @@ function makeFakeJobsClient() {
             error: null,
             worker_id: null,
             claimed_at: null,
+            heartbeat_at: null,
             completed_at: null,
+            retry_count: 0,
+            max_retries: payload.max_retries ?? 3,
+            idempotency_key: payload.idempotency_key ?? null,
+            next_retry_at: null,
             created_at: createdAt,
             updated_at: createdAt
           };
@@ -158,6 +206,21 @@ function makeFakeJobsClient() {
       if (name === 'reclaim_stale_background_jobs') {
         return Promise.resolve({ data: reclaimStale(args.p_stale_seconds), error: null });
       }
+      if (name === 'complete_background_job') {
+        return Promise.resolve({ data: completeJob(args.p_job_id, args.p_worker_id, args.p_result), error: null });
+      }
+      if (name === 'fail_background_job') {
+        return Promise.resolve({
+          data: failJob(args.p_job_id, args.p_worker_id, args.p_error, args.p_backoff_seconds),
+          error: null,
+        });
+      }
+      if (name === 'renew_job_lease') {
+        return Promise.resolve({ data: renewLease(args.p_job_id, args.p_worker_id), error: null });
+      }
+      if (name === 'upsert_worker_heartbeat') {
+        return Promise.resolve({ data: { worker_id: args.p_worker_id }, error: null });
+      }
       return Promise.resolve({ data: null, error: { message: `Unknown rpc ${name}` } });
     }
   };
@@ -165,32 +228,12 @@ function makeFakeJobsClient() {
 
 function makeTerminalUpdateErrorClient(message) {
   return {
-    from(table) {
-      if (table !== 'background_jobs') throw new Error(`Unexpected table: ${table}`);
-      return {
-        update() {
-          return {
-            eq() {
-              return {
-                eq() {
-                  return {
-                    eq() {
-                      return {
-                        select() {
-                          return {
-                            maybeSingle: async () => ({ data: null, error: { message } })
-                          };
-                        }
-                      };
-                    }
-                  };
-                }
-              };
-            }
-          };
-        }
-      };
-    }
+    rpc(name) {
+      if (name === 'complete_background_job') {
+        return Promise.resolve({ data: null, error: { message } });
+      }
+      return Promise.resolve({ data: null, error: { message: `Unknown rpc ${name}` } });
+    },
   };
 }
 
@@ -233,10 +276,10 @@ describe('BackgroundJobsRepository', () => {
     expect(completed.status).toBe('completed');
     expect(completed.result).toEqual({ totalFound: 4 });
 
-    const failedJob = await repo.enqueue('tenant-a', 'pdf', { kind: 'resume' });
+    const failedJob = await repo.enqueue('tenant-a', 'pdf', { kind: 'resume' }, { maxRetries: 1 });
     await repo.claimNext('worker-1');
     const failed = await repo.fail(failedJob.jobId, 'worker-1', 'boom');
-    expect(failed.status).toBe('failed');
+    expect(failed.status).toBe('dead_letter');
     expect(failed.error).toBe('boom');
   });
 
@@ -246,7 +289,7 @@ describe('BackgroundJobsRepository', () => {
     });
 
     await expect(repo.complete('job-1', 'worker-1', {})).rejects.toThrow(
-      'BackgroundJobsRepository.completed failed: permission denied'
+      'BackgroundJobsRepository.complete failed: permission denied'
     );
   });
 
@@ -257,7 +300,7 @@ describe('BackgroundJobsRepository', () => {
     await repo.claimNext('worker-1');
 
     await expect(repo.complete(job.jobId, 'worker-2', {})).rejects.toThrow(
-      `BackgroundJobsRepository.completed lost lease for job ${job.jobId} (worker worker-2)`
+      `BackgroundJobsRepository.complete lost lease for job ${job.jobId} (worker worker-2)`
     );
     await expect(repo.fail(job.jobId, 'worker-2', 'boom')).rejects.toThrow('lost lease');
     await expect(repo.complete(job.jobId, 'worker-1', {})).resolves.toMatchObject({ status: 'completed' });
@@ -274,10 +317,26 @@ describe('BackgroundJobsRepository', () => {
     const repo = new BackgroundJobsRepository({ client });
     const job = await repo.enqueue('tenant-a', 'scan', {});
     const claimed = await repo.claimNext('worker-1');
-    client.rows.get(claimed.jobId).claimed_at = new Date(Date.now() - 1_000_000).toISOString();
+    const row = client.rows.get(claimed.jobId);
+    row.claimed_at = new Date(Date.now() - 1_000_000).toISOString();
+    row.heartbeat_at = row.claimed_at;
 
     const reclaimed = await repo.reclaimStale(DEFAULT_STALE_SECONDS);
     expect(reclaimed).toBe(1);
     await expect(repo.getForTenant('tenant-a', job.jobId)).resolves.toMatchObject({ status: 'queued' });
+  });
+
+  it('does not reclaim running jobs with a fresh heartbeat', async () => {
+    const client = makeFakeJobsClient();
+    const repo = new BackgroundJobsRepository({ client });
+    const job = await repo.enqueue('tenant-a', 'scan', {});
+    const claimed = await repo.claimNext('worker-1');
+    const row = client.rows.get(claimed.jobId);
+    row.claimed_at = new Date(Date.now() - 1_000_000).toISOString();
+    row.heartbeat_at = new Date().toISOString();
+
+    const reclaimed = await repo.reclaimStale(DEFAULT_STALE_SECONDS);
+    expect(reclaimed).toBe(0);
+    await expect(repo.getForTenant('tenant-a', job.jobId)).resolves.toMatchObject({ status: 'running' });
   });
 });

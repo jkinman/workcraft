@@ -44,10 +44,8 @@
  * tracker is touched). --note appends to the Notes cell with "; " and is
  * idempotent — re-running the same command is always safe.
  *
- * The read-modify-write runs under the shared tracker lock (tracker-utils.mjs,
- * same lock as merge-tracker.mjs) and the file is replaced atomically. Only the
- * Status and Notes cells of the matched row change; every other byte of the
- * tracker round-trips untouched.
+ * The read-modify-write runs under lib/filesystem-lock.mjs (same lock as
+ * merge-tracker.mjs) and the file is replaced atomically.
  *
  * Exit codes: 0 success (including no-op re-runs) · 1 usage error,
  * non-canonical state, unreadable states.yml, or non-retryable lock/write failure ·
@@ -67,15 +65,18 @@
  * tracker remains the source of truth for state. Read by funnel-velocity.mjs.
  */
 
-import { readFileSync, existsSync, appendFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { extractTrackerReportNumbers, resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
 import { roleFuzzyMatch } from './role-matcher.mjs';
 import {
   rebuildRow, resolveTrackerPath, writeFileAtomic, loadCanonicalStates, resolveCanonicalState,
-  normalizeCompany, cell, CLI_EXIT, makeCliFailWith, acquireTrackerLockForCli,
+  normalizeCompany, cell, CLI_EXIT, makeCliFailWith,
 } from './tracker-utils.mjs';
+import { acquireTrackerLock, trackerLockDirFor } from './lib/filesystem-lock.mjs';
+import { applyTrackerRowMutation } from './lib/tracker/mutate.mjs';
+import { appendStatusLogEntry } from './lib/tracker/status-log.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 const STATES_FILE = join(CAREER_OPS, 'templates/states.yml');
@@ -317,10 +318,29 @@ function resolveRow(rows) {
 
 // ── locked read-modify-write ─────────────────────────────────────
 
-// Shared with mark-pdf-ready.mjs (tracker-utils.mjs): dry-run never writes,
-// so it must not hold the exclusive lock — a read-only preview should not
-// block (or be blocked by) merge-tracker or another writer.
-const lock = await acquireTrackerLockForCli(APPS_FILE, { dryRun: flags.dryRun, failWith });
+async function acquireSetStatusLock(appsFile, { dryRun, failWith }) {
+  if (dryRun) return null;
+  try {
+    const lock = await acquireTrackerLock(trackerLockDirFor(appsFile), {
+      timeoutMs: Number(process.env.CAREER_OPS_TRACKER_LOCK_TIMEOUT_MS) || 60_000,
+      retryMs: Number(process.env.CAREER_OPS_TRACKER_LOCK_RETRY_MS) || 75,
+      staleMs: Number(process.env.CAREER_OPS_TRACKER_LOCK_STALE_MS) || 10 * 60_000,
+      lockLabel: 'tracker',
+      tracker: appsFile,
+    });
+    process.once('exit', () => lock.release());
+    return lock;
+  } catch (err) {
+    if (err?.code === 'LOCK_TIMEOUT') {
+      failWith(CLI_EXIT.LOCK_TIMEOUT, 'lock-timeout', err.message);
+    }
+    failWith(CLI_EXIT.USAGE, 'lock-error', `Cannot acquire tracker lock: ${err.message}`);
+    throw err;
+  }
+}
+
+// Dry-run never writes, so it must not hold the exclusive lock.
+const lock = await acquireSetStatusLock(APPS_FILE, { dryRun: flags.dryRun, failWith });
 
 let content;
 try {
@@ -432,62 +452,44 @@ if (flags.role && !flags.force && !roleMatchesTarget) {
 const oldStatus = target.status;
 const note = flags.note != null ? cell(flags.note) : null;
 
-// Rebuild only the matched line: change the Status cell, append the note, keep
-// every other cell exactly as parsed.
-const parts = lines[target.lineIdx].split('|').map(s => s.trim());
-while (parts.length <= Math.max(colmap.status, colmap.notes ?? 0)) parts.push('');
-
-const statusChanged = parts[colmap.status] !== newStatus;
-parts[colmap.status] = newStatus;
-
-let noteChanged = false;
-if (note) {
-  if (colmap.notes == null) {
-    failWith(EXIT_USAGE, 'no-notes-column', 'Tracker has no Notes column — cannot apply --note');
+let mutation;
+try {
+  mutation = applyTrackerRowMutation({
+    lines,
+    target,
+    colmap,
+    newStatus,
+    note,
+  });
+} catch (err) {
+  if (err.code === 'no-notes-column') {
+    failWith(EXIT_USAGE, err.code, err.message);
   }
-  const existing = parts[colmap.notes] ?? '';
-  // Delimiter-aware idempotency: the note counts as already present only when
-  // it appears as a whole "; "-delimited entry (or as the entire field) — a
-  // bare substring of a longer entry ("sent" inside "sent CV") must not
-  // suppress a genuinely new note. Matching the full note text at entry
-  // boundaries (instead of splitting the field into segments) keeps retries
-  // idempotent even when the note itself contains "; ".
-  const hasNote = existing === note
-    || existing.startsWith(`${note}; `)
-    || existing.endsWith(`; ${note}`)
-    || existing.includes(`; ${note}; `);
-  if (!hasNote) {
-    parts[colmap.notes] = existing && existing !== '—' && existing !== '-' ? `${existing}; ${note}` : note;
-    noteChanged = true;
-  }
+  throw err;
 }
 
-const changed = statusChanged || noteChanged;
+const { changed, statusChanged, noteChanged } = mutation;
 
 if (changed && !flags.dryRun) {
-  lines[target.lineIdx] = rebuildRow(parts);
   try {
-    writeFileAtomic(APPS_FILE, lines.join('\n'));
+    writeFileAtomic(APPS_FILE, mutation.lines.join('\n'));
   } catch (err) {
-    // Same structured error contract as every other failure path — a raw
-    // stack trace on stdout/stderr would break --json consumers.
     failWith(EXIT_USAGE, 'write-failure', `Cannot write tracker at ${APPS_FILE}: ${err.message}`);
   }
 }
 
-// ── status-log append (transition ledger, read by funnel-velocity.mjs) ──
-// Observation trail only: the tracker stays the source of truth for STATE,
-// the ledger records WHEN transitions happened. A failed append is a warning,
-// never a failure — the status write above already succeeded. Sibling of the
-// tracker file so CAREER_OPS_TRACKER redirects (tests, custom layouts) keep
-// the ledger next to the tracker it describes. Inside the lock window, so
-// concurrent writers can't interleave lines.
 let statusLogged = false;
 if (statusChanged && !flags.dryRun) {
-  const logPath = join(dirname(APPS_FILE), 'status-log.tsv');
   const eventDate = flags.on ?? new Date().toISOString().slice(0, 10);
   try {
-    appendFileSync(logPath, `${target.num}\t${eventDate}\t${oldStatus}\t${newStatus}\tset-status\t\n`);
+    await appendStatusLogEntry({
+      trackerPath: APPS_FILE,
+      trackerNum: target.num,
+      date: eventDate,
+      fromStatus: oldStatus,
+      toStatus: newStatus,
+      source: 'set-status',
+    });
     statusLogged = true;
   } catch (err) {
     console.error(`⚠ status-log append failed (status change itself succeeded): ${err.message}`);

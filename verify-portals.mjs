@@ -32,86 +32,15 @@ import yaml from 'js-yaml';
 
 import { fetchJson as defaultFetchJson, makeHttpCtx } from './providers/_http.mjs';
 import { loadProviders, resolveProvider } from './providers/_registry.mjs';
+import { parseAtsSlug, ATS_PROBE_SPECS } from './lib/discovery/ats-identity.mjs';
+
+export { parseAtsSlug };
+
+/** @deprecated use ATS_PROBE_SPECS from lib/discovery/ats-identity.mjs */
+export const ATS = ATS_PROBE_SPECS;
 
 const DEFAULT_PORTALS_PATH = process.env.CAREER_OPS_PORTALS || 'portals.yml';
-
-// The core providers/ directory — the SAME plugins the scanner loads. Resolved
-// from this file's location so it's independent of the caller's cwd.
 const PROVIDERS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), 'providers');
-
-// How to turn a slug into a probe URL, and where the job list lives in the
-// response, for each supported ATS. Greenhouse/Ashby wrap jobs in `{ jobs }`;
-// Lever returns a bare array. `includeCompensation` mirrors the ashby provider.
-export const ATS = {
-  greenhouse: {
-    probeUrl: (slug) =>
-      `https://boards-api.greenhouse.io/v1/boards/${slug}/jobs`,
-    jobCount: (json) => (Array.isArray(json?.jobs) ? json.jobs.length : null),
-  },
-  ashby: {
-    probeUrl: (slug) =>
-      `https://api.ashbyhq.com/posting-api/job-board/${slug}?includeCompensation=true`,
-    jobCount: (json) => (Array.isArray(json?.jobs) ? json.jobs.length : null),
-  },
-  lever: {
-    // EU boards (jobs.eu.lever.co) resolve to api.eu.lever.co, mirroring the
-    // provider's resolveApiUrl; the default is the base instance.
-    probeUrl: (slug, { eu = false } = {}) => `https://api.${eu ? 'eu.' : ''}lever.co/v0/postings/${slug}`,
-    jobCount: (json) => (Array.isArray(json) ? json.length : null),
-  },
-};
-
-// Recognize an ATS + slug from a careers_url OR an `api:` URL. The careers_url
-// patterns mirror the provider `resolveApiUrl` regexes; the api-URL patterns
-// cover entries that pin the resolved endpoint directly. First match wins.
-const ATS_URL_PATTERNS = [
-  {
-    ats: 'greenhouse',
-    re: /boards-api\.greenhouse\.io\/v1\/boards\/([^/?#]+)/,
-  },
-  { ats: 'greenhouse', re: /job-boards(?:\.eu)?\.greenhouse\.io\/([^/?#]+)/ },
-  { ats: 'greenhouse', re: /boards\.greenhouse\.io\/([^/?#]+)/ },
-  { ats: 'ashby', re: /api\.ashbyhq\.com\/posting-api\/job-board\/([^/?#]+)/ },
-  { ats: 'ashby', re: /jobs\.ashbyhq\.com\/([^/?#]+)/ },
-  // Lever entries pin an exact `host` (checked via new URL(), like
-  // providers/lever.mjs's resolveApiUrl) instead of matching the hostname as a
-  // loose substring anywhere in the URL — otherwise a crafted
-  // https://evil.com/jobs.lever.co/x careers_url would falsely resolve as Lever.
-  { ats: 'lever', host: 'api.eu.lever.co', re: /^\/v0\/postings\/([^/?#]+)/, eu: true },
-  { ats: 'lever', host: 'jobs.eu.lever.co', re: /^\/([^/?#]+)/, eu: true },
-  { ats: 'lever', host: 'api.lever.co', re: /^\/v0\/postings\/([^/?#]+)/ },
-  { ats: 'lever', host: 'jobs.lever.co', re: /^\/([^/?#]+)/ },
-];
-
-/**
- * Identify the ATS and slug embedded in a careers_url or api URL.
- *
- * @param {string} url - A `careers_url` or `api` value from portals.yml.
- * @returns {{ats: string, slug: string, eu?: boolean}|null} Match, or null for
- *   non-ATS URLs (branded careers pages, Workday, job boards, etc.) which this
- *   tool skips. `eu` is set for Lever's EU data-residency instance.
- */
-export function parseAtsSlug(url) {
-  const text = String(url || '');
-  let hostname = null;
-  let pathname = null;
-  try {
-    ({ hostname, pathname } = new URL(text));
-  } catch {
-    // Not a parseable absolute URL — host-scoped patterns below simply won't match.
-  }
-  for (const { ats, re, eu, host } of ATS_URL_PATTERNS) {
-    if (host) {
-      if (hostname !== host) continue;
-      const m = pathname.match(re);
-      if (m && m[1]) return eu ? { ats, slug: m[1], eu: true } : { ats, slug: m[1] };
-      continue;
-    }
-    const m = text.match(re);
-    if (m && m[1]) return eu ? { ats, slug: m[1], eu: true } : { ats, slug: m[1] };
-  }
-  return null;
-}
 
 /**
  * Derive candidate ATS slugs from a company name.

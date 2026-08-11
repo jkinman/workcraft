@@ -6,6 +6,7 @@ module.exports = defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    setupFiles: ['test/setup-globals.js'],
     include: ['test/**/*.test.{js,jsx}']
   }
 });

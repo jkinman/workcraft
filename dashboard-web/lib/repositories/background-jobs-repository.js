@@ -1,8 +1,10 @@
-const { createSupabaseServerClient } = require('./supabase-client');
+const { createSupabaseServerClient, assertServiceRoleAllowed } = require('./supabase-client');
 
 const DEFAULT_STALE_SECONDS = 900;
-const JOB_STATUSES = new Set(['queued', 'running', 'completed', 'failed']);
-const JOB_TYPES = new Set(['scan', 'pdf']);
+const DEFAULT_MAX_RETRIES = 3;
+const DEFAULT_BACKOFF_SECONDS = 30;
+const JOB_STATUSES = new Set(['queued', 'running', 'completed', 'failed', 'dead_letter']);
+const JOB_TYPES = new Set(['scan', 'pdf', 'evaluation']);
 
 function normalizeJobRow(row) {
   if (!row) return null;
@@ -17,10 +19,15 @@ function normalizeJobRow(row) {
     error: row.error || null,
     workerId: row.worker_id || null,
     claimedAt: row.claimed_at || null,
+    heartbeatAt: row.heartbeat_at || null,
     completedAt: row.completed_at || null,
+    retryCount: row.retry_count ?? 0,
+    maxRetries: row.max_retries ?? DEFAULT_MAX_RETRIES,
+    idempotencyKey: row.idempotency_key || null,
+    nextRetryAt: row.next_retry_at || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    pollUrl: `/api/jobs/${row.id}`
+    pollUrl: `/api/jobs/${row.id}`,
   };
 }
 
@@ -37,13 +44,31 @@ function assertJobStatus(status) {
 }
 
 class BackgroundJobsRepository {
-  constructor({ client, env = process.env } = {}) {
-    this.client = client || createSupabaseServerClient(env);
+  constructor({ client, env = process.env, allowServiceRole = false } = {}) {
+    if (!client) {
+      if (!allowServiceRole) {
+        throw new Error('BackgroundJobsRepository requires an injected Supabase client');
+      }
+      client = createSupabaseServerClient(env);
+    }
+    assertServiceRoleAllowed(client, {
+      allowServiceRole,
+      context: 'BackgroundJobsRepository',
+    });
+    this.client = client;
+    this.allowServiceRole = allowServiceRole;
   }
 
-  async enqueue(tenantId, jobType, payload = {}) {
+  async enqueue(tenantId, jobType, payload = {}, options = {}) {
     if (!tenantId) throw new Error('BackgroundJobsRepository.enqueue requires tenantId');
     assertJobType(jobType);
+
+    if (options.idempotencyKey) {
+      const existing = await this.findByIdempotencyKey(tenantId, options.idempotencyKey);
+      if (existing && existing.status !== 'failed') {
+        return existing;
+      }
+    }
 
     const { data, error } = await this.client
       .from('background_jobs')
@@ -51,12 +76,28 @@ class BackgroundJobsRepository {
         tenant_id: tenantId,
         job_type: jobType,
         status: 'queued',
-        payload
+        payload,
+        idempotency_key: options.idempotencyKey || null,
+        max_retries: options.maxRetries ?? DEFAULT_MAX_RETRIES,
       })
       .select('*')
       .single();
 
     if (error) throw new Error(`BackgroundJobsRepository.enqueue failed: ${error.message}`);
+    return normalizeJobRow(data);
+  }
+
+  async findByIdempotencyKey(tenantId, idempotencyKey) {
+    if (!tenantId || !idempotencyKey) return null;
+
+    const { data, error } = await this.client
+      .from('background_jobs')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .eq('idempotency_key', idempotencyKey)
+      .maybeSingle();
+
+    if (error) throw new Error(`BackgroundJobsRepository.findByIdempotencyKey failed: ${error.message}`);
     return normalizeJobRow(data);
   }
 
@@ -79,62 +120,74 @@ class BackgroundJobsRepository {
 
     const { data, error } = await this.client.rpc('claim_next_background_job', {
       p_worker_id: workerId,
-      p_stale_seconds: staleSeconds
+      p_stale_seconds: staleSeconds,
     });
 
     if (error) throw new Error(`BackgroundJobsRepository.claimNext failed: ${error.message}`);
     return normalizeJobRow(Array.isArray(data) ? data[0] : data);
   }
 
+  async renewLease(jobId, workerId) {
+    const { data, error } = await this.client.rpc('renew_job_lease', {
+      p_job_id: jobId,
+      p_worker_id: workerId,
+    });
+
+    if (error) throw new Error(`BackgroundJobsRepository.renewLease failed: ${error.message}`);
+    return Boolean(data);
+  }
+
   async reclaimStale(staleSeconds = DEFAULT_STALE_SECONDS) {
     const { data, error } = await this.client.rpc('reclaim_stale_background_jobs', {
-      p_stale_seconds: staleSeconds
+      p_stale_seconds: staleSeconds,
     });
 
     if (error) throw new Error(`BackgroundJobsRepository.reclaimStale failed: ${error.message}`);
     return data || 0;
   }
 
+  async heartbeat(workerId, metadata = {}) {
+    const { error } = await this.client.rpc('upsert_worker_heartbeat', {
+      p_worker_id: workerId,
+      p_metadata: metadata,
+    });
+
+    if (error) throw new Error(`BackgroundJobsRepository.heartbeat failed: ${error.message}`);
+  }
+
   async complete(jobId, workerId, result = {}) {
     if (!workerId) throw new Error('BackgroundJobsRepository.complete requires workerId');
-    return this.#setTerminalState(jobId, workerId, 'completed', { result, error: null });
-  }
 
-  async fail(jobId, workerId, errorMessage) {
-    if (!workerId) throw new Error('BackgroundJobsRepository.fail requires workerId');
-    return this.#setTerminalState(jobId, workerId, 'failed', {
-      result: null,
-      error: errorMessage || 'Job failed'
+    const { data, error } = await this.client.rpc('complete_background_job', {
+      p_job_id: jobId,
+      p_worker_id: workerId,
+      p_result: result,
     });
+
+    if (error) throw new Error(`BackgroundJobsRepository.complete failed: ${error.message}`);
+    const row = normalizeJobRow(Array.isArray(data) ? data[0] : data);
+    if (!row) {
+      throw new Error(`BackgroundJobsRepository.complete lost lease for job ${jobId} (worker ${workerId})`);
+    }
+    return row;
   }
 
-  async #setTerminalState(jobId, workerId, status, { result, error }) {
-    assertJobStatus(status);
+  async fail(jobId, workerId, errorMessage, backoffSeconds = DEFAULT_BACKOFF_SECONDS) {
+    if (!workerId) throw new Error('BackgroundJobsRepository.fail requires workerId');
 
-    const { data, error: updateError } = await this.client
-      .from('background_jobs')
-      .update({
-        status,
-        result,
-        error,
-        completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', jobId)
-      .eq('worker_id', workerId)
-      .eq('status', 'running')
-      .select('*')
-      .maybeSingle();
+    const { data, error } = await this.client.rpc('fail_background_job', {
+      p_job_id: jobId,
+      p_worker_id: workerId,
+      p_error: errorMessage || 'Job failed',
+      p_backoff_seconds: backoffSeconds,
+    });
 
-    if (updateError) {
-      throw new Error(`BackgroundJobsRepository.${status} failed: ${updateError.message}`);
+    if (error) throw new Error(`BackgroundJobsRepository.fail failed: ${error.message}`);
+    const row = normalizeJobRow(Array.isArray(data) ? data[0] : data);
+    if (!row) {
+      throw new Error(`BackgroundJobsRepository.fail lost lease for job ${jobId} (worker ${workerId})`);
     }
-    if (!data) {
-      throw new Error(
-        `BackgroundJobsRepository.${status} lost lease for job ${jobId} (worker ${workerId})`
-      );
-    }
-    return normalizeJobRow(data);
+    return row;
   }
 }
 
@@ -142,9 +195,16 @@ function createBackgroundJobsRepository(options = {}) {
   return new BackgroundJobsRepository(options);
 }
 
+function createWorkerBackgroundJobsRepository(env = process.env) {
+  return new BackgroundJobsRepository({ allowServiceRole: true, env });
+}
+
 module.exports = {
   BackgroundJobsRepository,
+  DEFAULT_BACKOFF_SECONDS,
+  DEFAULT_MAX_RETRIES,
   DEFAULT_STALE_SECONDS,
   createBackgroundJobsRepository,
-  normalizeJobRow
+  createWorkerBackgroundJobsRepository,
+  normalizeJobRow,
 };

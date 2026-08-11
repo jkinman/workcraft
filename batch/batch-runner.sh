@@ -11,7 +11,8 @@ set -euo pipefail
 # for now — contributions welcome.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_DIR="${CAREER_OPS_PROJECT_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+export CAREER_OPS_DATA_ROOT="${CAREER_OPS_DATA_ROOT:-$PROJECT_DIR}"
 BATCH_DIR="$SCRIPT_DIR"
 INPUT_FILE="$BATCH_DIR/batch-input.tsv"
 STATE_FILE="$BATCH_DIR/batch-state.tsv"
@@ -39,6 +40,7 @@ MAX_RETRIES=2
 MIN_SCORE=0
 SKIP_PDF=false
 MODEL=""  # explicit override; otherwise resolved from config/profile.yml spend_tier
+CLI_BACKEND="${CAREER_OPS_BATCH_ADAPTER:-claude}"
 RESOLVED_MODEL=""
 RESOLVED_SPEND_TIER=""
 RATE_LIMIT_SLEEP=300
@@ -74,6 +76,8 @@ Options:
   --model NAME         Override the tier-resolved Claude model passed to
                        `claude -p --model` (otherwise uses config/profile.yml
                        spend_tier: economy/standard/premium; default standard)
+  --cli-backend ID     Worker CLI backend: claude | codex | opencode
+                       (default: claude, or CAREER_OPS_BATCH_ADAPTER env)
   --status             Show batch progress and a per-job table, then exit
   --watch              Live-refresh progress until the run completes
   -h, --help           Show this help
@@ -118,6 +122,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --model) MODEL="$2"; shift 2 ;;
+    --cli-backend) CLI_BACKEND="$2"; shift 2 ;;
     --status) STATUS_ONLY=true; shift ;;
     --watch) WATCH_MODE=true; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -178,8 +183,13 @@ check_prerequisites() {
     exit 1
   fi
 
-  if ! command -v claude &>/dev/null; then
-    echo "ERROR: 'claude' CLI not found in PATH."
+  if [[ "$CLI_BACKEND" == "claude" ]] && ! command -v claude &>/dev/null; then
+    echo "ERROR: 'claude' CLI not found in PATH (use --cli-backend codex|opencode or install Claude Code)."
+    exit 1
+  fi
+
+  if [[ "$CLI_BACKEND" != "claude" && "$CLI_BACKEND" != "codex" && "$CLI_BACKEND" != "opencode" ]]; then
+    echo "ERROR: unsupported --cli-backend '$CLI_BACKEND' (claude | codex | opencode)"
     exit 1
   fi
 
@@ -196,150 +206,27 @@ check_status_prerequisites() {
 
 # Initialize state file if it doesn't exist
 init_state() {
-  if [[ ! -f "$STATE_FILE" ]]; then
-    printf 'id\turl\tstatus\tstarted_at\tcompleted_at\treport_num\tscore\terror\tretries\n' > "$STATE_FILE"
-  fi
+  CAREER_OPS_DATA_ROOT="$CAREER_OPS_DATA_ROOT" node "$PROJECT_DIR/lib/batch/cli.mjs" init-state
 }
 
-acquire_state_lock() {
-  if [[ "${STATE_LOCK_DISABLED:-0}" -eq 1 ]]; then
-    return 0
-  fi
-
-  local waited=0
-  local max_waits=$((STATE_LOCK_TIMEOUT_SECONDS * 10))
-
-  while true; do
-    if mkdir "$STATE_LOCK_DIR" 2>/dev/null; then
-      if printf '%s\n' "${BASHPID:-$$}" > "$STATE_LOCK_PID_FILE"; then
-        STATE_LOCK_OWNED=1
-        return 0
-      fi
-      rm -f "$STATE_LOCK_PID_FILE" 2>/dev/null || true
-      rmdir "$STATE_LOCK_DIR" 2>/dev/null || true
-      echo "ERROR: Failed to initialize state lock metadata at $STATE_LOCK_DIR"
-      return 1
-    fi
-
-    if [[ ! -d "$STATE_LOCK_DIR" ]]; then
-      if (( PARALLEL <= 1 )); then
-        echo "WARN: State lock creation failed. Falling back to lock-free operation (single-worker mode)." >&2
-        STATE_LOCK_DISABLED=1
-        STATE_LOCK_OWNED=0
-        return 0
-      fi
-      echo "ERROR: Failed to create state lock directory $STATE_LOCK_DIR"
-      return 1
-    fi
-
-    if [[ -f "$STATE_LOCK_PID_FILE" ]]; then
-      local lock_pid
-      lock_pid=$(cat "$STATE_LOCK_PID_FILE" 2>/dev/null || true)
-      if [[ -n "$lock_pid" ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
-        rm -f "$STATE_LOCK_PID_FILE"
-        if rmdir "$STATE_LOCK_DIR" 2>/dev/null; then
-          echo "WARN: Recovered stale state lock (PID $lock_pid not running)."
-          continue
-        fi
-      fi
-    fi
-
-    if (( waited >= max_waits )); then
-      echo "ERROR: Timed out waiting for state lock at $STATE_LOCK_DIR"
-      echo "If no batch-runner worker is active, remove the stale lock directory."
-      return 1
-    fi
-
-    sleep 0.1
-    ((waited += 1))
-  done
-}
-
-release_state_lock() {
-  if [[ "${STATE_LOCK_OWNED:-0}" -ne 1 ]]; then
-    return
-  fi
-  rm -f "$STATE_LOCK_PID_FILE" 2>/dev/null || true
-  rmdir "$STATE_LOCK_DIR" 2>/dev/null || true
-  STATE_LOCK_OWNED=0
-}
-
-run_with_state_lock() {
-  acquire_state_lock || return $?
-
-  local status=0
-  if "$@"; then
-    status=0
-  else
-    status=$?
-  fi
-
-  release_state_lock
-  return "$status"
-}
+# Legacy no-op — batch state locking is handled by lib/batch/state.mjs.
+acquire_state_lock() { return 0; }
+release_state_lock() { return 0; }
+run_with_state_lock() { "$@"; }
 
 # Get status of an offer from state file
 get_status() {
-  local id="$1"
-  if [[ ! -f "$STATE_FILE" ]]; then
-    echo "none"
-    return
-  fi
-  local status
-  status=$(awk -F'\t' -v id="$id" '$1 == id { print $3 }' "$STATE_FILE")
-  echo "${status:-none}"
+  CAREER_OPS_DATA_ROOT="$CAREER_OPS_DATA_ROOT" node "$PROJECT_DIR/lib/batch/cli.mjs" get-status "$1"
 }
 
 # Get retry count for an offer
 get_retries() {
-  local id="$1"
-  if [[ ! -f "$STATE_FILE" ]]; then
-    echo "0"
-    return
-  fi
-  local retries
-  retries=$(awk -F'\t' -v id="$id" '$1 == id { print $9 }' "$STATE_FILE")
-  echo "${retries:-0}"
+  CAREER_OPS_DATA_ROOT="$CAREER_OPS_DATA_ROOT" node "$PROJECT_DIR/lib/batch/cli.mjs" get-retries "$1"
 }
 
-# Read spend_tier from config/profile.yml. Defaults to "standard" if the key
-# is absent or invalid.
+# Read spend_tier from config/profile.yml via lib/profile.
 read_spend_tier() {
-  local raw=""
-
-  if [[ -f "$PROFILE_FILE" ]]; then
-    raw=$(
-      awk -F: '
-        /^[[:space:]]*spend_tier[[:space:]]*:/ {
-          value = substr($0, index($0, ":") + 1)
-          print value
-          exit
-        }
-      ' "$PROFILE_FILE"
-    )
-    raw="${raw%%#*}"
-    raw="${raw//$'\r'/}"
-    raw="${raw#"${raw%%[![:space:]]*}"}"
-    raw="${raw%"${raw##*[![:space:]]}"}"
-    case "$raw" in
-      \"*\") raw="${raw#\"}"; raw="${raw%\"}" ;;
-      \'*\') raw="${raw#\'}"; raw="${raw%\'}" ;;
-    esac
-    raw="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
-  fi
-
-  case "$raw" in
-    economy|standard|premium)
-      printf '%s\n' "$raw"
-      ;;
-    "")
-      printf '%s\n' "standard"
-      ;;
-    *)
-      echo "WARN: Invalid spend_tier \"$raw\" in ${PROFILE_FILE#"$PROJECT_DIR/"}; falling back to standard." >&2
-      printf '%s\n' "standard"
-      ;;
-  esac
+  CAREER_OPS_DATA_ROOT="$CAREER_OPS_DATA_ROOT" node "$PROJECT_DIR/lib/batch/cli.mjs" spend-tier
 }
 
 # Tier -> model mapping. Keep in sync with the table in modes/_shared.md.
@@ -375,50 +262,10 @@ log_discard() {
 }
 
 
-# Update or insert state for an offer.
-# Caller must hold STATE_LOCK_DIR while this runs.
+# Update or insert state for an offer (locked via lib/batch/state.mjs).
 update_state_unlocked() {
-  local id="$1" url="$2" status="$3" started="$4" completed="$5" report_num="$6" score="$7" error="$8" retries="$9"
-
-  # batch-state.tsv is tab-separated with one row per line -- a literal tab,
-  # newline, or carriage return inside $error (e.g. from a worker's raw error
-  # text, or JSON.parse unescaping \n/\r/\t in a caller upstream) would split
-  # into extra columns or extra rows and corrupt every row after it. Collapse
-  # them to spaces centrally here so every caller is protected, not just the
-  # one that happened to trigger this.
-  error=${error//$'\r'/ }
-  error=${error//$'\n'/ }
-  error=${error//$'\t'/ }
-
-  if [[ ! -f "$STATE_FILE" ]]; then
-    init_state
-  fi
-
-  local tmp="$STATE_FILE.tmp"
-  local found=false
-
-  # Write header
-  head -1 "$STATE_FILE" > "$tmp"
-
-  # Process existing lines
-  while IFS=$'\t' read -r sid surl sstatus sstarted scompleted sreport sscore serror sretries; do
-    [[ "$sid" == "id" ]] && continue  # skip header
-    if [[ "$sid" == "$id" ]]; then
-      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-        "$id" "$url" "$status" "$started" "$completed" "$report_num" "$score" "$error" "$retries" >> "$tmp"
-      found=true
-    else
-      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-        "$sid" "$surl" "$sstatus" "$sstarted" "$scompleted" "$sreport" "$sscore" "$serror" "$sretries" >> "$tmp"
-    fi
-  done < "$STATE_FILE"
-
-  if [[ "$found" == "false" ]]; then
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$id" "$url" "$status" "$started" "$completed" "$report_num" "$score" "$error" "$retries" >> "$tmp"
-  fi
-
-  mv "$tmp" "$STATE_FILE"
+  CAREER_OPS_DATA_ROOT="$CAREER_OPS_DATA_ROOT" node "$PROJECT_DIR/lib/batch/cli.mjs" upsert \
+    "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9"
 }
 
 update_state() {
@@ -550,33 +397,37 @@ process_offer() {
     fi
   done
 
-  # Launch claude -p worker.
-  # The model is resolved once per run from spend_tier unless --model was
-  # passed. Building the command in an array keeps quoting safe regardless.
-  # --strict-mcp-config (with no --mcp-config) starts workers with no MCP
-  # servers: they only evaluate offers and need none. Without it each parallel
-  # worker inherits the parent session's MCP (e.g. Playwright) and they deadlock
-  # fighting over the single shared browser when --parallel > 1 (issue #506).
-  local -a claude_args=(-p --dangerously-skip-permissions --strict-mcp-config)
-  if [[ -n "$RESOLVED_MODEL" ]]; then
-    claude_args+=(--model "$RESOLVED_MODEL")
-  fi
-  claude_args+=(--append-system-prompt-file "$resolved_prompt" "$prompt")
-
+  # Launch worker via lib/batch/run-worker.mjs (Claude default; Codex/OpenCode optional).
   local exit_code=0
   local terminal_failure_recorded=false
   local shim_retries=0
   local max_shim_retries=4
+  local worker_json=""
   while true; do
     exit_code=0
-    claude "${claude_args[@]}" > "$log_file" 2>&1 || exit_code=$?
+    worker_json=""
+    local -a worker_args=(
+      --adapter "$CLI_BACKEND"
+      --prompt-file "$resolved_prompt"
+      --prompt-text "$prompt"
+      --log-file "$log_file"
+      --json
+    )
+    if [[ -n "$RESOLVED_MODEL" ]]; then
+      worker_args+=(--model "$RESOLVED_MODEL")
+    fi
+    if worker_json="$(node "$PROJECT_DIR/lib/batch/run-worker.mjs" "${worker_args[@]}" 2>>"$log_file")"; then
+      exit_code=0
+    else
+      exit_code=$?
+    fi
 
     if [[ $exit_code -eq 0 ]]; then
       break
     fi
 
     # Check for Claude Code npm shim swap (exit code 127 + command not found)
-    if [[ $exit_code -eq 127 ]] && grep -qE "(claude: command not found|claude:.*not found|cannot find.*claude)" "$log_file" && (( shim_retries < max_shim_retries )); then
+    if [[ "$CLI_BACKEND" == "claude" && $exit_code -eq 127 ]] && grep -qE "(claude: command not found|claude:.*not found|cannot find.*claude)" "$log_file" && (( shim_retries < max_shim_retries )); then
       shim_retries=$((shim_retries + 1))
       echo "    ⏳ Claude command not found (shim swap detected). Retrying in 30s (attempt $shim_retries/$max_shim_retries)..."
       sleep 30
@@ -935,6 +786,9 @@ main() {
   fi
 
   echo "=== career-ops batch runner ==="
+  if command -v node &>/dev/null; then
+    node "$PROJECT_DIR/lib/evaluation/batch-select.mjs" 2>/dev/null || true
+  fi
   if (( LIMIT > 0 )); then
     echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES | Limit: $LIMIT"
   else

@@ -17,24 +17,24 @@ class CareerOpsDataClient {
     return this.readOptionalText(this.repository.profilePath());
   }
 
-  writeProfile(content) {
-    return this.repository.writeText(this.repository.profilePath(), content);
+  async writeProfile(content) {
+    return await this.repository.writeText(this.repository.profilePath(), content);
   }
 
   readCv() {
     return this.readOptionalText(this.repository.cvPath());
   }
 
-  writeCv(content) {
-    return this.repository.writeText(this.repository.cvPath(), content);
+  async writeCv(content) {
+    return await this.repository.writeText(this.repository.cvPath(), content);
   }
 
   readPortals() {
     return this.readOptionalText(this.repository.portalsPath());
   }
 
-  writePortals(content) {
-    return this.repository.writeText(this.repository.portalsPath(), content);
+  async writePortals(content) {
+    return await this.repository.writeText(this.repository.portalsPath(), content);
   }
 
   readArticleDigest() {
@@ -45,8 +45,8 @@ class CareerOpsDataClient {
     return this.readOptionalText(this.repository.agentProfilePath());
   }
 
-  writeAgentProfile(content) {
-    return this.repository.writeText(this.repository.agentProfilePath(), content);
+  async writeAgentProfile(content) {
+    return await this.repository.writeText(this.repository.agentProfilePath(), content);
   }
 
   readStoryBank() {
@@ -58,9 +58,9 @@ class CareerOpsDataClient {
     return this.readOptionalText(path.join(this.repository.interviewPrepDir(), safeName));
   }
 
-  writeInterviewPrep(filename, content) {
+  async writeInterviewPrep(filename, content) {
     const safeName = path.basename(filename);
-    this.repository.writeText(path.join(this.repository.interviewPrepDir(), safeName), content);
+    return await this.repository.writeText(path.join(this.repository.interviewPrepDir(), safeName), content);
   }
 
   listInterviewPrep() {
@@ -81,32 +81,58 @@ class CareerOpsDataClient {
     return this.readOptionalText(this.repository.dataPath('pipeline.md'));
   }
 
-  writePipeline(content) {
-    return this.repository.writeText(this.repository.dataPath('pipeline.md'), content);
+  async writePipeline(content) {
+    return await this.repository.writeText(this.repository.dataPath('pipeline.md'), content);
   }
 
   readApplications() {
     return this.readOptionalText(this.repository.dataPath('applications.md'));
   }
 
-  writeApplications(content) {
-    return this.repository.writeText(this.repository.dataPath('applications.md'), content);
+  async writeApplications(content) {
+    return await this.repository.writeText(this.repository.dataPath('applications.md'), content);
+  }
+
+  trackerDocumentPath() {
+    return this.repository.dataPath('applications.md');
+  }
+
+  readStatusLog() {
+    return this.readOptionalText(this.repository.dataPath('status-log.tsv'));
+  }
+
+  async appendStatusLog(chunk) {
+    const key = this.repository.dataPath('status-log.tsv');
+    const existing = this.readStatusLog() || '';
+    return await this.repository.writeText(key, `${existing}${chunk}`);
+  }
+
+  async writeStatusLog(content) {
+    return await this.repository.writeText(this.repository.dataPath('status-log.tsv'), content);
+  }
+
+  async deleteStatusLog() {
+    const key = this.repository.dataPath('status-log.tsv');
+    if (typeof this.repository.deleteText === 'function') {
+      return await this.repository.deleteText(key);
+    }
+    return await this.repository.writeText(key, '');
   }
 
   readFollowUps() {
     return this.readOptionalText(this.repository.dataPath('follow-ups.md'));
   }
 
-  writeFollowUps(content) {
-    this.repository.writeText(this.repository.dataPath('follow-ups.md'), content);
+  async writeFollowUps(content) {
+    return await this.repository.writeText(this.repository.dataPath('follow-ups.md'), content);
   }
 
   readScanHistory() {
     return this.readOptionalText(this.repository.dataPath('scan-history.tsv'));
   }
 
-  writeScanHistory(content) {
-    this.repository.writeText(this.repository.dataPath('scan-history.tsv'), content);
+  async writeScanHistory(content) {
+    return await this.repository.writeText(this.repository.dataPath('scan-history.tsv'), content);
   }
 
   listReports() {
@@ -121,10 +147,10 @@ class CareerOpsDataClient {
     return this.readOptionalText(path.join(this.repository.reportsDir(), safeName));
   }
 
-  writeReport(filename, content) {
+  async writeReport(filename, content) {
     const safeName = path.basename(filename);
     const key = `${this.repository.reportsDir()}/${safeName}`;
-    return this.repository.writeText(key, content);
+    return await this.repository.writeText(key, content);
   }
 
   outputFileKey(filename) {
@@ -141,7 +167,7 @@ class CareerOpsDataClient {
   }
 
   async writeOutputFile(filename, content) {
-    return this.repository.writeBinary(this.outputFileKey(filename), content);
+    return await this.repository.writeBinary(this.outputFileKey(filename), content);
   }
 
   async putGeneratedFile({ filename, content, type = 'unknown', relatedEntity = null }) {
@@ -178,13 +204,54 @@ class CareerOpsDataClient {
     return this.repository.listOutputFiles();
   }
 
-  ensureOutputDir() {
-    this.repository.writeText(path.join(this.repository.outputDir(), '.gitkeep'), '');
+  async ensureOutputDir() {
+    await this.repository.writeText(path.join(this.repository.outputDir(), '.gitkeep'), '');
     return this.repository.outputDir();
   }
 
   listFilesInDirectory(dir, predicate) {
     return this.repository.listFilesInDirectory(dir, predicate);
+  }
+
+  /**
+   * Multi-document mutation seam for tracker transitions and evaluation persistence.
+   */
+  async mutateDocuments(mutations) {
+    const snapshots = new Map();
+    const applied = [];
+    const client = this;
+
+    async function rollbackApplied() {
+      for (let i = applied.length - 1; i >= 0; i -= 1) {
+        const key = applied[i];
+        const previous = snapshots.get(key);
+        if (previous == null) {
+          if (typeof client.repository.deleteText === 'function') {
+            await client.repository.deleteText(key);
+          } else {
+            await client.repository.writeText(key, '');
+          }
+        } else {
+          await client.repository.writeText(key, previous);
+        }
+      }
+    }
+
+    try {
+      for (const { key, content } of mutations) {
+        snapshots.set(key, client.repository.exists(key) ? client.repository.readText(key) : null);
+        await client.repository.writeText(key, content);
+        applied.push(key);
+      }
+    } catch (err) {
+      await rollbackApplied();
+      throw err;
+    }
+
+    return {
+      applied,
+      rollback: rollbackApplied,
+    };
   }
 }
 

@@ -7,22 +7,31 @@ function isHostedJobResult(result) {
   return result?.mode === 'hosted-job';
 }
 
-async function handleHostedOrInlinePdf(request, services, tenant, {
-  buildPayload,
-  runInline
-}) {
+function translatePdfRunnerResult(result) {
+  if (isHostedJobResult(result)) {
+    return { body: result, status: 202 };
+  }
+
+  const pdfResult = result.result ?? result;
+  return {
+    body: pdfResult,
+    status: pdfResult?.success ? 200 : 500,
+  };
+}
+
+async function handlePdfRequest(request, services, tenant, { buildPayload }) {
   const body = await request.json().catch(() => ({}));
 
   try {
     const payload = buildPayload(body, services);
+    const result = await services.runner.enqueuePdf(payload);
+    const { body: responseBody, status } = translatePdfRunnerResult(result);
 
-    if (tenant.mode === 'hosted') {
-      const queued = await services.runner.enqueuePdf(payload);
-      return jsonSuccess(queued, 202);
+    if (status === 202) {
+      return jsonSuccess(responseBody, status);
     }
 
-    const result = await runInline(payload, services);
-    return Response.json(result, { status: result.success ? 200 : 500 });
+    return Response.json(responseBody, { status });
   } catch (error) {
     return jsonError(error.message, error.statusCode || 400);
   }
@@ -41,8 +50,10 @@ function requireReportSlug(body) {
 }
 
 module.exports = {
-  handleHostedOrInlinePdf,
+  handlePdfRequest,
+  handleHostedOrInlinePdf: handlePdfRequest,
   isHostedJobResult,
+  translatePdfRunnerResult,
   requireCompanyRole,
   requireReportSlug
 };

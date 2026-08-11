@@ -123,10 +123,26 @@ state_history:
 
   it('transitions only the requested tenant report when slugs collide', async () => {
     const rootPath = mkdtempSync(join(tmpdir(), 'career-ops-api-'));
+    const tenantAData = join(rootPath, 'tenants', 'tenant-a', 'data');
+    const tenantBData = join(rootPath, 'tenants', 'tenant-b', 'data');
     const tenantAReports = join(rootPath, 'tenants', 'tenant-a', 'reports');
     const tenantBReports = join(rootPath, 'tenants', 'tenant-b', 'reports');
+    mkdirSync(tenantAData, { recursive: true });
+    mkdirSync(tenantBData, { recursive: true });
     mkdirSync(tenantAReports, { recursive: true });
     mkdirSync(tenantBReports, { recursive: true });
+
+    const tracker = [
+      '# Applications Tracker',
+      '',
+      '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |',
+      '|---|------|---------|------|-------|--------|-----|--------|-------|',
+      '| 1 | 2026-05-24 | Acme | Engineer | 4.0/5 | Evaluated | ❌ | [1](reports/001-acme.md) | |',
+      '',
+    ].join('\n');
+    writeFileSync(join(tenantAData, 'applications.md'), tracker);
+    writeFileSync(join(tenantBData, 'applications.md'), tracker);
+
     const report = `---
 state: evaluated
 state_history:

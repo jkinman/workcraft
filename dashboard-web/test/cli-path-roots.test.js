@@ -37,7 +37,8 @@ describe('career-ops CLI path roots', () => {
   it('keeps tenant-aware root scripts on the shared path-root seam', async () => {
     for (const script of tenantAwareScripts) {
       const source = await import('fs/promises').then(fs => fs.readFile(new URL(script, import.meta.url), 'utf8'));
-      expect(source).toContain('resolveCareerOpsPaths');
+      const usesPathSeam = source.includes('resolveCareerOpsPaths') || source.includes('discoveryPaths');
+      expect(usesPathSeam).toBe(true);
     }
   });
 });

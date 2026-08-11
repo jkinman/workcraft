@@ -1,6 +1,7 @@
 import { headers } from 'next/headers';
 import { Header } from '../../ui/Header';
 import { QueueForm } from '../../ui/QueueForm';
+import { EvaluateForm } from '../../ui/EvaluateForm';
 import { SetupPanel } from '../../ui/SetupPanel';
 import tenantServices from '../../lib/tenant-services';
 
@@ -20,6 +21,9 @@ export default async function QueuePage() {
 
         <div className="section-title">Queue New Target</div>
         <QueueForm />
+
+        <div className="section-title" style={{ marginTop: '2rem' }}>Run Full Evaluation</div>
+        <EvaluateForm />
       </main>
     </>
   );

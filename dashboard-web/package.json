@@ -2,13 +2,11 @@
   "name": "career-ops-web-dashboard",
   "version": "1.0.0",
   "description": "Web dashboard for viewing Career-Ops job pipeline remotely",
-  "main": "server.js",
+  "main": "app/page.jsx",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "legacy:dev": "nodemon server.js",
-    "legacy:start": "node server.js",
     "worker": "node scripts/run-worker.mjs",
     "worker:once": "node scripts/run-worker.mjs --once",
     "test": "vitest run",
@@ -17,7 +15,6 @@
   "dependencies": {
     "@clerk/nextjs": "^7.4.2",
     "@supabase/supabase-js": "^2.106.2",
-    "express": "^4.18.2",
     "js-yaml": "^4.1.1",
     "mammoth": "^1.12.0",
     "marked": "^9.1.6",
@@ -34,7 +31,6 @@
     "@testing-library/react": "^16.3.0",
     "@vitejs/plugin-react": "^5.1.1",
     "jsdom": "^27.2.0",
-    "nodemon": "^3.0.2",
     "supertest": "^7.1.4",
     "vitest": "^4.0.14"
   }

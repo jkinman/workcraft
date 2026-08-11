@@ -1,4 +1,3 @@
-const { createSupabaseServerClient } = require('./supabase-client');
 const { tenantStorageKey } = require('./storage-keys');
 
 const DEFAULT_BUCKET = 'career-ops-files';
@@ -13,9 +12,12 @@ const DEFAULT_BUCKET = 'career-ops-files';
 class SupabaseRepository {
   constructor({ tenantId, client, env = process.env } = {}) {
     if (!tenantId) throw new Error('SupabaseRepository requires a tenantId');
+    if (!client) {
+      throw new Error('SupabaseRepository requires an injected Supabase client');
+    }
     this.tenantId = tenantId;
     this.storageAdapter = 'supabase';
-    this.client = client || createSupabaseServerClient(env);
+    this.client = client;
     this.bucket = env.SUPABASE_STORAGE_BUCKET || DEFAULT_BUCKET;
     // cache: Map<path, { content: string, updated_at: string }>
     this._cache = new Map();
@@ -82,9 +84,12 @@ class SupabaseRepository {
 
   // ── Async writes ─────────────────────────────────────────────────────────────
 
-  async writeText(key, content) {
-    // Optimistic cache update so subsequent reads in this request see the new value
-    this._cache.set(key, { content, updated_at: new Date().toISOString() });
+  async writeText(key, content, { expectedUpdatedAt } = {}) {
+    const previous = this._cache.get(key);
+
+    if (expectedUpdatedAt && previous && previous.updated_at !== expectedUpdatedAt) {
+      throw new Error(`SupabaseRepository.writeText(${key}) conflict: document changed concurrently`);
+    }
 
     const { error } = await this.client
       .from('tenant_documents')
@@ -93,7 +98,34 @@ class SupabaseRepository {
         { onConflict: 'tenant_id,path' }
       );
 
-    if (error) throw new Error(`SupabaseRepository.writeText(${key}) failed: ${error.message}`);
+    if (error) {
+      if (previous) {
+        this._cache.set(key, previous);
+      } else {
+        this._cache.delete(key);
+      }
+      throw new Error(`SupabaseRepository.writeText(${key}) failed: ${error.message}`);
+    }
+
+    this._cache.set(key, { content, updated_at: new Date().toISOString() });
+    return true;
+  }
+
+  async deleteText(key) {
+    const hadEntry = this._cache.has(key);
+    this._cache.delete(key);
+
+    const { error } = await this.client
+      .from('tenant_documents')
+      .delete()
+      .eq('tenant_id', this.tenantId)
+      .eq('path', key);
+
+    if (error) {
+      throw new Error(`SupabaseRepository.deleteText(${key}) failed: ${error.message}`);
+    }
+
+    return hadEntry;
   }
 
   async writeBinary(key, content) {

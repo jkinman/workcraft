@@ -93,6 +93,7 @@ reports/*-RESERVED.md
 .mcp.json
 career-dashboard
 package-lock.json
+!dashboard-web/package-lock.json
 
 # Local browser and planning artifacts
 .playwright-mcp/

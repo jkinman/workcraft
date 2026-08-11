@@ -1,0 +1,31 @@
+{
+  "version": "2026-08-10",
+  "currency": "USD",
+  "models": {
+    "gpt-4o-mini": { "input": 0.00000015, "output": 0.0000006 },
+    "gpt-4o": { "input": 0.0000025, "output": 0.00001 },
+    "gemini-3.6-flash": { "input": 0.0000015, "output": 0.0000075, "cachedInput": 0.00000015 },
+    "gemini-3.5-flash": { "input": 0.0000015, "output": 0.000009, "cachedInput": 0.00000015 },
+    "gemini-2.5-flash": { "input": 0.000000075, "output": 0.0000003, "cachedInput": 0.0000000375 },
+    "gemini-2.5-pro": { "input": 0.00000125, "output": 0.000005, "cachedInput": 0.000000625 },
+    "deepseek/deepseek-chat": { "input": 0.00000014, "output": 0.00000028 },
+    "deepseek-chat": { "input": 0.00000014, "output": 0.00000028 },
+    "deepseek/deepseek-reasoner": { "input": 0.00000055, "output": 0.00000219 },
+    "deepseek-reasoner": { "input": 0.00000055, "output": 0.00000219 },
+    "claude-3-5-sonnet": { "input": 0.000003, "output": 0.000015 },
+    "claude-3-5-haiku": { "input": 0.0000008, "output": 0.000004 },
+    "claude-3-opus": { "input": 0.000015, "output": 0.000075 },
+    "claude-3-haiku": { "input": 0.00000025, "output": 0.00000125 }
+  },
+  "providerDefaults": {
+    "openai": "gpt-4o-mini",
+    "openai-compatible": "gpt-4o-mini",
+    "openrouter": "deepseek/deepseek-chat",
+    "gemini": "gemini-3.6-flash",
+    "claude": "claude-3-5-sonnet",
+    "anthropic": "claude-3-5-sonnet",
+    "ollama": null
+  },
+  "freeProviders": ["ollama"],
+  "openRouterFreeWhenUnpinned": true
+}

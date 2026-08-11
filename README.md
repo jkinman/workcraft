@@ -325,25 +325,74 @@ In Codex, slash commands are not guaranteed. Use the same mode names in a prompt
 
 ## How It Works
 
+Career-Ops is a **modular monolith** with stable CLI/web facades and deep modules under `lib/`. It can run entirely from local files or as a multi-tenant hosted application.
+
+```text
+CLI scripts / Next.js routes / Go TUI
+                  │
+                  ▼
+       request or CLI composition
+                  │
+       ┌──────────┼───────────┐
+       ▼          ▼           ▼
+  Discovery   Evaluation   Documents
+  Pipeline     Pipeline     HTML/LaTeX
+       │          │           │
+ providers     LLM gateway   adapters
+       │          │           │
+       └──────────┼───────────┘
+                  ▼
+       tracker / reports / output
+                  │
+        local files or Supabase
 ```
-You paste a job URL or description
-        │
-        ▼
-┌──────────────────┐
-│  Archetype       │  Classifies: LLMOps / Agentic / PM / SA / FDE / Transformation
-│  Detection       │
-└────────┬─────────┘
-         │
-┌────────▼─────────┐
-│  A-G Evaluation  │  Match, gaps, comp research, STAR stories, legitimacy
-│  (reads cv.md)   │
-└────────┬─────────┘
-         │
-    ┌────┼────┐
-    ▼    ▼    ▼
- Report  PDF  Tracker
-  .md   .pdf  entry
+
+### Stable facades and deep modules
+
+Root commands such as `scan.mjs`, `openai-eval.mjs`, `generate-pdf.mjs`, and `set-status.mjs` remain stable for users, plugins, and updates. Their implementation lives in import-safe modules:
+
+- `lib/discovery/` — provider registry, ATS identity, filtering/deduplication, liveness, posting reader, structured scan results
+- `lib/llm/` — provider-neutral routing, OpenAI-compatible and Gemini adapters, retries, budgets, rate cards, usage and telemetry
+- `lib/evaluation/` — context assembly, validation, score parsing, report persistence and tracker integration
+- `lib/documents/` — ATS normalization plus HTML/Playwright and LaTeX adapters
+- `lib/tracker/` — shared Node/Go contract, row mutations, report/status synchronization
+- `lib/profile/`, `lib/reports/`, `lib/batch/` — typed profile reads, report parsing, batch state and CLI adapters
+
+### Local runtime
+
+Files are canonical:
+
+```text
+scan → data/pipeline.md → evaluation → reports/*.md
+                                      ├→ data/applications.md
+                                      ├→ data/llm-usage.jsonl
+                                      └→ output/*.pdf
 ```
+
+The Go TUI reads the same files and shares tracker states/aliases through `templates/tracker-contract.json`.
+
+### Hosted runtime
+
+`dashboard-web/` is the Next.js multi-tenant adapter:
+
+```text
+Clerk request
+  → request-scoped tenant services
+  → Clerk JWT + Supabase RLS repository
+  → background job (scan / evaluation / PDF)
+  → lease-safe worker
+  → structured result + tenant artifact sync
+```
+
+Tenant HTTP requests use an anon Supabase client carrying the Clerk JWT. The service role is restricted to workers/admin operations. Workers heartbeat and renew leases, retry with backoff, and move exhausted jobs to `dead_letter`.
+
+URL-only evaluations use an SSRF-safe Playwright posting reader. Browser liveness is the final authority, and page content is always treated as untrusted data.
+
+### LLM routing and cost control
+
+All scripted/web model calls pass through `lib/llm/`. Routes resolve spend tier, provider/model overrides, capabilities, fallback order and hard budget ceilings. Every call produces a sanitized Usage Record with token counts, estimated cost, latency, outcome, rate-card version and route audit metadata. The hosted API exposes tenant-scoped summaries at `GET /api/llm-usage`.
+
+For the complete maintainer map, read [CONTEXT.md](CONTEXT.md), [ARCHITECTURE.md](ARCHITECTURE.md), [runtime architecture](docs/ARCHITECTURE.md), and the [ADRs](docs/adr/).
 
 ## Pre-configured Portals
 
@@ -379,13 +428,29 @@ npm run build:dashboard   # optional: build the standalone binary
 
 Features: 6 filter tabs, 4 sort modes, grouped/flat view, lazy-loaded previews, inline status changes.
 
-There is also an **experimental web UI** (alpha, opt-in — nothing runs unless you start it): see [`web/README.md`](web/README.md).
+## Hosted Web Dashboard
+
+`dashboard-web/` provides the multi-tenant Next.js application. It supports Clerk authentication, Supabase-backed tenant documents, background scan/evaluation/PDF jobs, worker resilience, LLM usage reporting, and request-scoped services.
+
+```bash
+cd dashboard-web
+cp .env.example .env.local
+npm install
+npm run dev
+
+# In another process when hosted queue mode is enabled
+npm run worker
+```
+
+Local development can use the filesystem repository and inline workloads. Hosted mode requires Clerk/Supabase setup and a separate service-role worker. See [Production Runbook](docs/PRODUCTION_RUNBOOK.md) and [RLS + Clerk Setup](docs/RLS_CLERK_SETUP.md). The retired Express implementation and parity record are documented in [`dashboard-web/LEGACY.md`](dashboard-web/LEGACY.md) and [`dashboard-web/EXPRESS_PARITY.md`](dashboard-web/EXPRESS_PARITY.md).
 
 ## Project Structure
 
 ```
 career-ops/
 ├── AGENTS.md                    # Canonical agent instructions (all CLIs)
+├── CONTEXT.md                   # Domain, module map, invariants, maintainer guide
+├── ARCHITECTURE.md              # Design principles and component boundaries
 ├── CLAUDE.md                    # Claude Code wrapper (imports AGENTS.md)
 ├── CODEX.md                     # Codex wrapper (imports AGENTS.md)
 ├── OPENCODE.md                  # OpenCode wrapper (imports AGENTS.md)
@@ -394,8 +459,19 @@ career-ops/
 ├── article-digest.md            # Your proof points (optional)
 ├── config/
 │   └── profile.example.yml      # Template for your profile
+├── lib/                         # Import-safe modular-monolith implementation
+│   ├── llm/                     # Routing, adapters, pricing, usage, telemetry
+│   ├── evaluation/              # Evaluation pipeline and persistence
+│   ├── discovery/               # Scanning, ATS identity, liveness, SSRF guards
+│   ├── documents/               # HTML/Playwright and LaTeX adapters
+│   ├── tracker/                 # Shared tracker contract and transitions
+│   ├── batch/                   # Batch state and CLI adapters
+│   ├── profile/                 # Profile parsing
+│   └── reports/                 # Report parsing/frontmatter
 ├── modes/                       # Skill modes
-│   ├── _shared.md               # Shared context (customize this)
+│   ├── _shared.md               # Shared system scoring rules (do not personalize)
+│   ├── _profile.md              # User targeting and narrative
+│   ├── _custom.md               # User workflows and output preferences
 │   ├── oferta.md                # Single evaluation
 │   ├── pdf.md                   # PDF generation
 │   ├── cover.md                 # Cover letter generation
@@ -410,12 +486,18 @@ career-ops/
 ├── batch/
 │   ├── batch-prompt.md          # Self-contained worker prompt
 │   └── batch-runner.sh          # Orchestrator script
-├── dashboard/                   # Go TUI pipeline viewer
+├── dashboard/                   # Go TUI local adapter
+├── dashboard-web/               # Next.js + Clerk + Supabase hosted adapter
+│   ├── app/                     # Pages and thin API route facades
+│   ├── lib/services/            # Request-scoped domain/application services
+│   ├── lib/repositories/        # Filesystem and Supabase adapters
+│   ├── lib/worker/              # Leased background job execution
+│   └── supabase/schema.sql      # Tables, RLS policies and worker RPCs
 ├── data/                        # Your tracking data (gitignored)
 ├── reports/                     # Evaluation reports (gitignored)
 ├── output/                      # Generated PDFs (gitignored)
 ├── fonts/                       # Space Grotesk + DM Sans
-├── docs/                        # Setup, customization, budget guide, architecture
+├── docs/                        # Setup, ADRs, runbooks and runtime architecture
 └── examples/                    # Sample CV, report, proof points
 ```
 
@@ -426,13 +508,19 @@ career-ops/
 ![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=flat&logo=playwright&logoColor=white)
 ![Go](https://img.shields.io/badge/Go-00ADD8?style=flat&logo=go&logoColor=white)
 ![Bubble Tea](https://img.shields.io/badge/Bubble_Tea-FF75B5?style=flat&logo=go&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-000?style=flat&logo=next.js&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-3FCF8E?style=flat&logo=supabase&logoColor=white)
+![Clerk](https://img.shields.io/badge/Clerk-6C47FF?style=flat&logo=clerk&logoColor=white)
 
-- **Agent**: AI coding CLI with shared skills and modes (`AGENTS.md` + CLI wrapper)
-- **PDF**: Playwright + HTML template
+- **Architecture**: Node.js modular monolith with stable facades and adapter seams
+- **Agent layer**: AI coding CLI with shared skills and modes (`AGENTS.md` + CLI wrapper)
+- **LLM gateway**: Provider-neutral fetch adapters, versioned rate card, usage ledger and route audit
+- **PDF**: Playwright + HTML template; optional LaTeX compiler adapter
 - **Cover letters**: HTML template + Playwright (A4 PDF, same pipeline as CVs)
-- **Scanner**: Playwright + Greenhouse API + WebSearch
-- **Dashboard**: Go + Bubble Tea + Lipgloss (Catppuccin Mocha theme)
-- **Data**: Markdown tables + YAML config + TSV batch files
+- **Scanner**: Public ATS APIs/feeds plus Playwright verification and SSRF guards
+- **Local dashboard**: Go + Bubble Tea + Lipgloss
+- **Hosted dashboard**: Next.js + React + Clerk + Supabase + background worker
+- **Data**: Markdown/YAML/TSV locally; RLS-isolated document/storage adapters when hosted
 
 ## Also Open Source
 
@@ -473,9 +561,9 @@ Wikidata: [Santiago Fernández de Valderrama Aparicio](https://www.wikidata.org/
 
 ## Disclaimer
 
-**career-ops is a local, open-source tool, NOT a hosted service.** By using this software, you acknowledge:
+**career-ops is open-source software. The upstream product is local-first; this fork also includes a self-hosted multi-tenant web adapter. No hosted service is operated for you by this repository.** By using this software, you acknowledge:
 
-1. **You control your data.** Your CV, contact info, and personal data stay on your machine and are sent directly to the AI provider you choose (Anthropic, OpenAI, etc.). We do not collect, store, or have access to any of your data.
+1. **You control your data and deployment.** In local mode, CV and application data stay in your workspace except when sent to the model/provider you choose. In hosted mode, the operator you deploy with controls Clerk, Supabase, storage, workers, retention, and provider access. The upstream authors do not receive your data.
 2. **You control the AI.** The default prompts instruct the AI not to auto-submit applications, but AI models can behave unpredictably. If you modify the prompts or use different models, you do so at your own risk. **Always review AI-generated content for accuracy before submitting.**
 3. **You comply with third-party ToS.** You must use this tool in accordance with the Terms of Service of the career portals you interact with (Greenhouse, Lever, Workday, LinkedIn, etc.). Do not use this tool to spam employers or overwhelm ATS systems.
 4. **No guarantees.** Evaluations are recommendations, not truth. AI models may hallucinate skills or experience. The authors are not liable for employment outcomes, rejected applications, account restrictions, or any other consequences.

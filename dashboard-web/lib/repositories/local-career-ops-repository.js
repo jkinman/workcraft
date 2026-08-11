@@ -4,9 +4,9 @@ const CONFIG = require('../../config');
 const { DEFAULT_TENANT_ID, normalizeTenantId } = require('../tenant-context');
 
 class LocalCareerOpsRepository {
-  constructor({ tenantId = DEFAULT_TENANT_ID, rootPath = CONFIG.CAREER_OPS_PATH } = {}) {
+  constructor({ tenantId = DEFAULT_TENANT_ID, rootPath } = {}) {
     this.tenantId = normalizeTenantId(tenantId);
-    this.rootPath = rootPath;
+    this.rootPath = rootPath || process.env.CAREER_OPS_PATH || CONFIG.CAREER_OPS_PATH;
     this.storageAdapter = 'local';
   }
 
@@ -73,9 +73,15 @@ class LocalCareerOpsRepository {
     return fs.readFileSync(filePath);
   }
 
-  writeText(filePath, content) {
+  async writeText(filePath, content) {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, content, 'utf8');
+  }
+
+  async deleteText(filePath) {
+    if (!fs.existsSync(filePath)) return false;
+    fs.unlinkSync(filePath);
+    return true;
   }
 
   writeBinary(filePath, content) {

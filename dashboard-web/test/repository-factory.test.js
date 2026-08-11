@@ -7,9 +7,9 @@ describe('repository factory', () => {
     expect(repo.constructor.name).toBe('LocalCareerOpsRepository');
   });
 
-  it('rejects in hosted mode without Supabase credentials', async () => {
+  it('rejects in hosted mode without tenant-scoped Supabase client', async () => {
     await expect(createRepository({ tenantId: 'tenant-a', mode: 'hosted' })).rejects.toThrow(
-      'Supabase storage adapter requires'
+      'Hosted repository requires tenantContext.supabaseClient'
     );
   });
 

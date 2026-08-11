@@ -3,11 +3,12 @@
 
 const fs = require('fs');
 const path = require('path');
-const playwright = require('playwright');
 const CONFIG = require('./config');
 const { parseCV, parseCVContent } = require('./cv-parser');
 const { renderMarkdownToHtml } = require('./report-parser');
 const { LOGO_BASE64 } = require('./logo-base64');
+const { renderHtmlToPdf, renderHtmlStringToPdfBuffer } = require('./lib/documents-bridge');
+const { loadDashboardProfile } = require('./lib/profile-bridge');
 
 // ─── SHARED UTILS ───────────────────────────────────────────────────────────
 
@@ -23,44 +24,14 @@ function defaultProfile() {
   };
 }
 
-function parseProfileContent(content) {
-  const defaultProfile = {
-    full_name: 'Career-Ops Candidate',
-    email: '',
-    phone: '',
-    location: '',
-    linkedin: '',
-    portfolio_url: '',
-    github: ''
-  };
-  const profile = { ...defaultProfile };
-  const candidateMatch = content.match(/candidate:\s*\n((?:\s+\w+:\s*.*\n)+)/);
-  if (candidateMatch) {
-    const section = candidateMatch[1];
-    const extract = (key) => {
-      const m = section.match(new RegExp(`${key}:\s*"?([^"\n]+)"?`));
-      return m ? m[1].trim() : null;
-    };
-    profile.full_name = extract('full_name') || profile.full_name;
-    profile.email = extract('email') || profile.email;
-    profile.phone = extract('phone') || profile.phone;
-    profile.location = extract('location') || profile.location;
-    profile.linkedin = extract('linkedin') || profile.linkedin;
-    profile.portfolio_url = extract('portfolio_url') || profile.portfolio_url;
-    profile.github = extract('github') || profile.github;
-  }
-  return profile;
-}
-
-function loadProfile(dataClient) {
+async function loadProfile(dataClient) {
   if (dataClient) {
     const content = dataClient.readProfile();
-    return content ? parseProfileContent(content) : defaultProfile();
+    return content ? loadDashboardProfile(content) : defaultProfile();
   }
-
   const profilePath = path.join(CONFIG.CAREER_OPS_PATH, 'config', 'profile.yml');
   if (!fs.existsSync(profilePath)) return defaultProfile();
-  return parseProfileContent(fs.readFileSync(profilePath, 'utf8'));
+  return loadDashboardProfile(fs.readFileSync(profilePath, 'utf8'));
 }
 
 function loadCv(dataClient) {
@@ -100,30 +71,21 @@ function extractKeywords(jobDescription) {
 }
 
 async function htmlToPDF(html, outputPath, format) {
-  const browser = await playwright.chromium.launch();
-  const page = await browser.newPage();
-  await page.setContent(html, { waitUntil: 'networkidle' });
-  await page.pdf({
-    path: outputPath,
-    format: format.format === 'letter' ? 'Letter' : 'A4',
-    printBackground: true,
-    margin: { top: '0.5in', right: '0.5in', bottom: '0.5in', left: '0.5in' }
+  await renderHtmlToPdf(html, outputPath, {
+    format: format.format,
+    updateIndex: false,
+    quiet: true,
   });
-  await browser.close();
   return outputPath;
 }
 
 async function htmlToPDFBuffer(html, format) {
-  const browser = await playwright.chromium.launch();
-  const page = await browser.newPage();
-  await page.setContent(html, { waitUntil: 'networkidle' });
-  const buffer = await page.pdf({
-    format: format.format === 'letter' ? 'Letter' : 'A4',
-    printBackground: true,
-    margin: { top: '0.5in', right: '0.5in', bottom: '0.5in', left: '0.5in' }
+  const result = await renderHtmlStringToPdfBuffer(html, {
+    format: format.format,
+    updateIndex: false,
+    quiet: true,
   });
-  await browser.close();
-  return buffer;
+  return result.pdfBuffer;
 }
 
 async function writePDFOutput(html, filename, format, dataClient) {
@@ -1190,6 +1152,8 @@ module.exports = {
   generateEvalReportPDF,
   generateFullEvalReportPDF,
   generatePDFBundle,
+  detectFormat,
+  extractKeywords,
   // Also export for direct use
   buildResumeHTML,
   buildCoverLetterHTML,

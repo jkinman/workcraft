@@ -1,6 +1,7 @@
 import { spawnSync } from 'child_process';
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -14,18 +15,18 @@ import { pass, fail, ROOT, NODE } from './helpers.mjs';
 const outputRoot = join(ROOT, 'output');
 mkdirSync(outputRoot, { recursive: true });
 const sandbox = mkdtempSync(join(outputRoot, 'page-budget-test-'));
-const script = join(sandbox, 'generate-pdf.mjs');
+const script = join(ROOT, 'generate-pdf.mjs');
 const input = join(sandbox, 'two-pages.html');
 const defaultOverflowInput = join(sandbox, 'three-pages.html');
 const manifest = join(sandbox, 'data', 'pdf-index.tsv');
 mkdirSync(join(sandbox, 'data'), { recursive: true });
 writeFileSync(manifest, '', 'utf-8');
 const playwrightStub = join(sandbox, 'node_modules', 'playwright');
+const rootPlaywright = join(ROOT, 'node_modules', 'playwright');
+const playwrightBackup = join(sandbox, 'playwright-backup');
 
-copyFileSync(join(ROOT, 'generate-pdf.mjs'), script);
-// generate-pdf.mjs imports its local sibling ./theme-style.mjs (dynamic PDF
-// theming, #1837); copy it into the sandbox too or the isolated script fails
-// to load with ERR_MODULE_NOT_FOUND before it can parse any --max-pages arg.
+// generate-pdf is a thin facade over lib/documents/* — run from ROOT with tenant data root.
+// lib/documents/html-playwright.mjs resolves playwright from ROOT/node_modules, so swap in the stub.
 copyFileSync(join(ROOT, 'theme-style.mjs'), join(sandbox, 'theme-style.mjs'));
 mkdirSync(playwrightStub, { recursive: true });
 writeFileSync(join(playwrightStub, 'package.json'), JSON.stringify({
@@ -115,6 +116,7 @@ writeFileSync(defaultOverflowInput, `<!doctype html>
 function runPdf(args) {
   const result = spawnSync(NODE, [script, ...args], {
     cwd: sandbox,
+    env: { ...process.env, CAREER_OPS_DATA_ROOT: sandbox },
     encoding: 'utf-8',
     timeout: 30_000,
   });
@@ -138,13 +140,29 @@ function stablePdf(path) {
 }
 
 function manifestHasPdf(path) {
-  const expected = relative(sandbox, path).replaceAll('\\', '/');
+  const expected = relative(ROOT, path).replaceAll('\\', '/');
   return readFileSync(manifest, 'utf-8')
     .split('\n')
     .some((line) => line.split('\t')[1] === expected);
 }
 
+function installPlaywrightStub() {
+  if (existsSync(rootPlaywright)) {
+    cpSync(rootPlaywright, playwrightBackup, { recursive: true });
+  }
+  mkdirSync(rootPlaywright, { recursive: true });
+  cpSync(playwrightStub, rootPlaywright, { recursive: true });
+}
+
+function restorePlaywright() {
+  rmSync(rootPlaywright, { recursive: true, force: true });
+  if (existsSync(playwrightBackup)) {
+    cpSync(playwrightBackup, rootPlaywright, { recursive: true });
+  }
+}
+
 try {
+  installPlaywrightStub();
   for (const invalid of ['nope', '-1', '0', '1.5']) {
     const invalidOutput = join(sandbox, `invalid-${invalid.replace(/\W/g, '-')}.pdf`);
     const result = runPdf(['missing.html', invalidOutput, `--max-pages=${invalid}`]);
@@ -227,5 +245,6 @@ try {
     fail(`generate-pdf strict page budget regressed: ${strictOverflow.output.trim()}`);
   }
 } finally {
+  restorePlaywright();
   rmSync(sandbox, { recursive: true, force: true });
 }

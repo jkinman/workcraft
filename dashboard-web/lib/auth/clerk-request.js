@@ -1,4 +1,5 @@
 const { clerkAuthToTenantRequest } = require('./clerk-adapter');
+const { resolveClerkSupabaseJwt } = require('./supabase-session');
 
 function isClerkConfigured(env = process.env) {
   return Boolean(env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && env.CLERK_SECRET_KEY);
@@ -13,10 +14,15 @@ async function getAuthenticatedTenantRequest(request = {}, env = process.env) {
     const { auth } = await import('@clerk/nextjs/server');
     const authResult = await auth();
     const tenantRequest = clerkAuthToTenantRequest(authResult);
+    const supabaseJwt = authResult?.userId
+      ? await resolveClerkSupabaseJwt(authResult, env)
+      : null;
 
     return {
       ...request,
-      ...tenantRequest
+      ...tenantRequest,
+      supabaseJwt,
+      clerkAuth: authResult,
     };
   } catch (error) {
     if (env.CAREER_OPS_TENANT_MODE === 'hosted' || env.NODE_ENV === 'production') {

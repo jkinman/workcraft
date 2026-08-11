@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import pdfRoute from '../lib/api/pdf-route';
 import workloadRunner from '../lib/services/workload-runner';
 
-const { handleHostedOrInlinePdf, isHostedJobResult } = pdfRoute;
+const { handlePdfRequest, isHostedJobResult } = pdfRoute;
 const { createHostedWorkloadRunner } = workloadRunner;
 
 function makeFakeJobsRepository() {
@@ -56,7 +56,7 @@ describe('hosted workload branching', () => {
     const services = { runner, dataClient: {}, reports: {} };
     const tenant = { mode: 'hosted', tenantId: 'tenant-a' };
 
-    const response = await handleHostedOrInlinePdf(jsonRequest({ company: 'Acme', role: 'Engineer' }), services, tenant, {
+    const response = await handlePdfRequest(jsonRequest({ company: 'Acme', role: 'Engineer' }), services, tenant, {
       buildPayload(body) {
         return {
           kind: 'resume',
@@ -65,9 +65,6 @@ describe('hosted workload branching', () => {
           jobDescription: ''
         };
       },
-      runInline: vi.fn(() => {
-        throw new Error('generator should not run in hosted mode');
-      })
     });
 
     const json = await response.json();
@@ -86,25 +83,28 @@ describe('hosted workload branching', () => {
     });
   });
 
-  it('runs inline generator in local mode', async () => {
-    const jobsRepository = makeFakeJobsRepository();
-    const runner = createHostedWorkloadRunner({ tenantId: 'tenant-a', mode: 'hosted' }, jobsRepository);
+  it('runs pdf through the workload runner in local mode', async () => {
+    const runner = {
+      enqueuePdf: vi.fn(async () => ({
+        mode: 'local-inline',
+        status: 'completed',
+        jobType: 'pdf',
+        result: { success: true, downloadUrl: '/download-pdf?file=cv.pdf' },
+      })),
+    };
     const services = { runner, dataClient: {}, reports: {} };
     const tenant = { mode: 'local-dev', tenantId: 'tenant-a' };
-    const runInline = vi.fn(async () => ({ success: true, downloadUrl: '/download-pdf?file=cv.pdf' }));
 
-    const response = await handleHostedOrInlinePdf(jsonRequest({ company: 'Acme', role: 'Engineer' }), services, tenant, {
+    const response = await handlePdfRequest(jsonRequest({ company: 'Acme', role: 'Engineer' }), services, tenant, {
       buildPayload(body) {
         return { kind: 'resume', company: body.company, role: body.role, jobDescription: '' };
       },
-      runInline
     });
 
     const json = await response.json();
     expect(response.status).toBe(200);
     expect(json.success).toBe(true);
-    expect(runInline).toHaveBeenCalledOnce();
-    expect(jobsRepository.jobs.size).toBe(0);
+    expect(runner.enqueuePdf).toHaveBeenCalledOnce();
   });
 
   it('enforces tenant isolation for job polling lookups', async () => {

@@ -23,12 +23,19 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import readline from 'node:readline';
 import yaml from 'js-yaml';
-import { outputLanguageInstruction, parseOutputLanguage } from './profile-language.mjs';
 import {
   formatReportNumber, releaseReportNumbers, reserveReportNumbers,
 } from './reserve-report-num.mjs';
-import { TokenAccumulator, formatBreakdown, normalizeOpenAIUsage } from './utils/token-tracker.mjs';
+import { TokenAccumulator, formatBreakdown } from './utils/token-tracker.mjs';
 import { DEFAULT_USER_AGENT } from './user-agent.mjs';
+import { buildOpenRouterSystemPrompt } from './lib/evaluation/pipeline.mjs';
+import { createEvaluationGateway } from './lib/evaluation/ledger.mjs';
+import { buildSystemMessage } from './lib/llm/adapters/openai-compatible.mjs';
+import {
+  persistEvaluationReport,
+  parseScoreSummary,
+  resolveSourceUrl,
+} from './lib/evaluation/index.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const tracker = new TokenAccumulator();
@@ -50,7 +57,6 @@ if (fs.existsSync(envPath)) {
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const OPENROUTER_API_URL    = 'https://openrouter.ai/api/v1/chat/completions';
 const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
 const MAX_TOKENS            = 8192;
 const RATE_LIMIT_DELAY_MS   = 2500;  // pause between requests on free tier
@@ -184,12 +190,36 @@ function fileExists(relPath) {
 // back-to-back calls within the cache TTL; providers that don't simply ignore
 // the field, so this is a safe passthrough that never changes the prompt text.
 export function buildCachedSystemMessage(systemPrompt) {
-  return {
-    role: 'system',
-    content: [
-      { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
-    ],
-  };
+  return buildSystemMessage(systemPrompt, 'openrouter.ai');
+}
+
+const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+let evaluationGateway = null;
+
+function getEvaluationGateway() {
+  if (!evaluationGateway) {
+    evaluationGateway = createEvaluationGateway({ rootDir: __dirname });
+  }
+  return evaluationGateway;
+}
+
+async function completeViaGateway(model, systemPrompt, userMessage) {
+  const gateway = getEvaluationGateway();
+  const result = await gateway.complete({
+    task: 'evaluation',
+    systemInstruction: systemPrompt,
+    userContent: userMessage,
+    route: {
+      provider: 'openai-compatible',
+      model,
+      baseUrl: OPENROUTER_BASE_URL,
+      apiKey: process.env.OPENROUTER_API_KEY ?? '',
+    },
+    timeoutMs: MODEL_TIMEOUT_MS,
+    generation: { maxOutputTokens: MAX_TOKENS },
+    retry: { maxAttempts: 1 },
+  });
+  return { content: result.text, usage: result.usage };
 }
 
 // ---------------------------------------------------------------------------
@@ -209,44 +239,13 @@ async function callOpenRouter(systemPrompt, userMessage) {
   if (pinnedModel) {
     activeModel = pinnedModel;
     process.stdout.write(`[model] ${pinnedModel} (pinned) ... `);
-    const body = JSON.stringify({
-      model: pinnedModel,
-      messages: [
-        buildCachedSystemMessage(systemPrompt),
-        { role: 'user', content: userMessage },
-      ],
-      max_tokens: MAX_TOKENS,
-    });
-    const ctrl = new AbortController();
-    const timerId = setTimeout(() => ctrl.abort(), MODEL_TIMEOUT_MS);
     try {
-      const resp = await fetch(OPENROUTER_API_URL, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${key}`,
-          'Content-Type':  'application/json',
-          'HTTP-Referer':  'https://github.com/santifer/career-ops',
-          'X-Title':       'career-ops',
-        },
-        body,
-        signal: ctrl.signal,
-      });
-      if (!resp.ok) {
-        const t = await resp.text();
-        throw new Error(`HTTP ${resp.status}: ${t.slice(0, 120)}`);
-      }
-      const data = await resp.json();
-      if (data.error) throw new Error(data.error.message);
-      const content = data.choices?.[0]?.message?.content ?? '';
-      if (!content) throw new Error('Empty response');
+      const { content, usage } = await completeViaGateway(pinnedModel, systemPrompt, userMessage);
       console.log('OK');
-      const usage = normalizeOpenAIUsage(data.usage);
       return { content, usage };
     } catch (e) {
-      if (e.name === 'AbortError') throw new Error(`Pinned model timed out after ${MODEL_TIMEOUT_MS / 1000}s`);
+      if (e.name === 'TimeoutError') throw new Error(`Pinned model timed out after ${MODEL_TIMEOUT_MS / 1000}s`);
       throw e;
-    } finally {
-      clearTimeout(timerId);
     }
   }
 
@@ -268,47 +267,8 @@ async function callOpenRouter(systemPrompt, userMessage) {
     process.stdout.write(`[model] ${model} ... `);
 
     try {
-      const body = JSON.stringify({
-        model,
-        messages: [
-          buildCachedSystemMessage(systemPrompt),
-          { role: 'user', content: userMessage },
-        ],
-        max_tokens: MAX_TOKENS,
-      });
-
-      const controller = new AbortController();
-      const timerId = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
-      let data;
-      try {
-        const resp = await fetch(OPENROUTER_API_URL, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${key}`,
-            'Content-Type':  'application/json',
-            'HTTP-Referer':  'https://github.com/santifer/career-ops',
-            'X-Title':       'career-ops',
-          },
-          body,
-          signal: controller.signal,
-        });
-        if (!resp.ok) {
-          const t = await resp.text();
-          throw new Error(`HTTP ${resp.status}: ${t.slice(0, 120)}`);
-        }
-        data = await resp.json();
-      } catch (e) {
-        if (e.name === 'AbortError') throw new Error(`Timeout after ${MODEL_TIMEOUT_MS / 1000}s`);
-        throw e;
-      } finally {
-        clearTimeout(timerId);
-      }
-      if (data.error) throw new Error(data.error.message);
-
-      const content = data.choices?.[0]?.message?.content ?? '';
+      const { content, usage } = await completeViaGateway(model, systemPrompt, userMessage);
       if (!content) throw new Error('Empty response');
-
-      const usage = normalizeOpenAIUsage(data.usage);
 
       modelIndex = (modelIndex + attempt + 1) % active.length;
       console.log('OK');
@@ -358,21 +318,7 @@ function loadContext() {
 }
 
 export function buildSystemPrompt(modeContent, ctx) {
-  const languageInstruction = outputLanguageInstruction(parseOutputLanguage(ctx.profile));
-  return [
-    ctx.shared,
-    ctx.profileMode,
-    modeContent,
-    '---',
-    'CANDIDATE PROFILE (YAML):',
-    ctx.profile,
-    '---',
-    'CV (Markdown):',
-    ctx.cv,
-    '---',
-    'OUTPUT LANGUAGE:',
-    languageInstruction,
-  ].filter(Boolean).join('\n\n');
+  return buildOpenRouterSystemPrompt(modeContent, ctx);
 }
 
 // ---------------------------------------------------------------------------
@@ -647,52 +593,50 @@ async function cmdEvaluate(input, ctx) {
   tracker.record('evaluation', resultObj.usage);
   const result = resultObj.content;
 
-  let reservedNumbers;
-  try {
-    reservedNumbers = await reserveReportNumbers(1, {
-      rootDir: __dirname,
-      reportsDir: path.join(__dirname, 'reports'),
-    });
-  } catch (e) {
-    console.error(`Could not reserve a report number: ${e.message}`);
+  let summary = parseScoreSummary(result, { multilineSafe: true });
+  if (summary.score === '?') {
+    const scoreMatch = result.match(/(?:score|puntuaci[oó]n)[^\d]*(\d+\.?\d*)/i);
+    if (scoreMatch) summary = { ...summary, score: scoreMatch[1] };
+  }
+  if (summary.company === 'unknown') {
+    const slug = extractCompanySlug(jdText, typeof input === 'string' ? input : null);
+    summary = {
+      ...summary,
+      company: slug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+      role: summary.role === 'unknown' ? '(see report)' : summary.role,
+    };
+  }
+
+  const sourceUrl = resolveSourceUrl({
+    explicitUrl: typeof input === 'string' && input.startsWith('http') ? input : undefined,
+    jdText,
+  });
+
+  const modelLabel = process.env.CAREER_OPS_MODEL || activeModel || 'free-rotation';
+  const persistResult = await persistEvaluationReport({
+    rootDir: __dirname,
+    reportsDir: path.join(__dirname, 'reports'),
+    evaluationText: result,
+    summary,
+    sourceUrl,
+    toolLine: `OpenRouter (${modelLabel})`,
+    trackerMode: 'tsv',
+    trackerNote: 'OpenRouter evaluation',
+    trackerAdditionsDir: path.join(__dirname, 'batch', 'tracker-additions'),
+  });
+
+  if (persistResult.saved) {
+    console.log(`\n✅ Report saved: reports/${persistResult.filename}`);
+  } else if (persistResult.error) {
+    console.error(`Could not save report: ${persistResult.error}`);
     return null;
   }
 
-  try {
-    // Save report
-    const today   = new Date().toISOString().split('T')[0];
-    const num     = reservedNumbers[0];
-    const slug    = extractCompanySlug(jdText, typeof input === 'string' ? input : null);
-    const numStr  = formatReportNumber(num);
-    const relPath = `reports/${numStr}-${slug}-${today}.md`;
+  console.log('\n─── EVALUATION ──────────────────────────────────────\n');
+  console.log(result);
+  console.log('\n─────────────────────────────────────────────────────\n');
 
-    // Extract Legitimacy from LLM output or fall back to placeholder
-    const legitMatch = result.match(/\*\*Legitimacy:\*\*\s*([^\n]+)/);
-    const legitLine  = legitMatch ? `**Legitimacy:** ${legitMatch[1].trim()}` : '**Legitimacy:** unconfirmed';
-    writeFile(relPath, `**URL:** ${input || '(pasted)'}\n${legitLine}\n\n${result}`);
-
-    const scoreMatch  = result.match(/(?:score|puntuaci[oó]n)[^\d]*(\d+\.?\d*)/i);
-    const scoreValue  = scoreMatch ? parseFloat(scoreMatch[1]) : NaN;
-    const scoreStr    = isFinite(scoreValue) ? `${scoreValue.toFixed(1)}/5` : '';
-    const companyName = slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-    const reportLink  = `[${numStr}](reports/${numStr}-${slug}-${today}.md)`;
-    const tsvLine     = `${num}\t${today}\t${companyName}\t(see report)\tEvaluated\t${scoreStr}\t❌\t${reportLink}\t\n`;
-    const tsvFile     = `batch/tracker-additions/or-${numStr}-${slug}.tsv`;
-    writeFile(tsvFile, `num\tdate\tcompany\trole\tstatus\tscore\tpdf\treport\tnotes\n${tsvLine}`);
-
-    console.log(`\n✅ Report saved: ${relPath}`);
-    console.log('\n─── EVALUATION ──────────────────────────────────────\n');
-    console.log(result);
-    console.log('\n─────────────────────────────────────────────────────\n');
-
-    return relPath;
-  } finally {
-    try {
-      await releaseReportNumbers(reservedNumbers, { reportsDir: path.join(__dirname, 'reports') });
-    } catch (e) {
-      console.warn(`Could not release report reservation: ${e.message}`);
-    }
-  }
+  return persistResult.reportPath ? `reports/${persistResult.filename}` : null;
 }
 
 // -- PIPELINE --

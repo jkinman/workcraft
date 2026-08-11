@@ -5,11 +5,13 @@ const CONFIG = require('../../config');
 const { createDataClient } = require('../data/career-ops-data-client');
 const { SupabaseRepository } = require('../repositories/supabase-repository');
 const { createReportService } = require('../services/report-service');
-const { parseMetric } = require('../services/workload-runner');
-const pdfBundle = require('../../pdf-bundle-generator');
+const { createEvaluationService } = require('../services/evaluation-service');
+const { runPdf } = require('../services/pdf-service');
 const {
   materializeTenantForScan,
-  syncScanArtifacts
+  syncScanArtifacts,
+  materializeTenantForEvaluation,
+  syncEvaluationArtifacts,
 } = require('./tenant-materializer');
 
 const execFilePromise = promisify(execFile);
@@ -20,7 +22,12 @@ async function createTenantDataClient(tenantId, client) {
   return createDataClient(repository);
 }
 
-async function runScanJob(job, { client, careerOpsPath = CONFIG.CAREER_OPS_PATH } = {}) {
+async function createTenantReportService(dataClient) {
+  const reportsModule = await import('../../../lib/reports/index.mjs');
+  return createReportService(dataClient, reportsModule);
+}
+
+async function runScanJob(job, { client, careerOpsPath = CONFIG.CAREER_OPS_PATH, signal } = {}) {
   const { mkdtemp, rm } = await import('fs/promises');
   const { tmpdir } = await import('os');
   const tempRoot = await mkdtemp(path.join(tmpdir(), 'career-ops-scan-'));
@@ -28,7 +35,7 @@ async function runScanJob(job, { client, careerOpsPath = CONFIG.CAREER_OPS_PATH 
   try {
     await materializeTenantForScan(job.tenantId, client, tempRoot);
 
-    const args = ['scan.mjs'];
+    const args = ['scan.mjs', '--json'];
     if (job.payload?.dryRun) args.push('--dry-run');
     if (job.payload?.deepDive) args.push('--deep-dive');
 
@@ -36,6 +43,7 @@ async function runScanJob(job, { client, careerOpsPath = CONFIG.CAREER_OPS_PATH 
       cwd: careerOpsPath,
       timeout: job.payload?.deepDive ? 300_000 : 120_000,
       maxBuffer: 1024 * 1024,
+      signal,
       env: {
         ...process.env,
         CAREER_OPS_DATA_ROOT: tempRoot
@@ -46,13 +54,19 @@ async function runScanJob(job, { client, careerOpsPath = CONFIG.CAREER_OPS_PATH 
       await syncScanArtifacts(job.tenantId, client, tempRoot);
     }
 
+    const { extractWorkerScanMetrics } = await import('../../../lib/discovery/scan-result.mjs');
+    const metrics = extractWorkerScanMetrics(stdout);
+
     return {
       dryRun: Boolean(job.payload?.dryRun),
       deepDive: Boolean(job.payload?.deepDive),
-      companies: parseMetric(stdout, /Companies scanned:\s+(\d+)/),
-      tasks: parseMetric(stdout, /Tasks run:\s+(\d+)/),
-      totalFound: parseMetric(stdout, /Total jobs found:\s+(\d+)/),
-      newOffers: parseMetric(stdout, /New offers added:\s+(\d+)/),
+      metricsSource: metrics.source,
+      companies: metrics.companies,
+      tasks: metrics.tasks,
+      totalFound: metrics.totalFound,
+      newOffers: metrics.newOffers,
+      elapsedMs: metrics.elapsedMs,
+      scanResult: metrics.scanResult,
       output: stdout.slice(-2000)
     };
   } finally {
@@ -60,42 +74,36 @@ async function runScanJob(job, { client, careerOpsPath = CONFIG.CAREER_OPS_PATH 
   }
 }
 
+async function runEvaluationJob(job, { client } = {}) {
+  const { mkdtemp, rm } = await import('fs/promises');
+  const { tmpdir } = await import('os');
+  const { LocalCareerOpsRepository } = require('../repositories/local-career-ops-repository');
+  const tempRoot = await mkdtemp(path.join(tmpdir(), 'career-ops-eval-'));
+
+  try {
+    await materializeTenantForEvaluation(job.tenantId, client, tempRoot);
+
+    const repository = new LocalCareerOpsRepository({ tenantId: 'local-dev', rootPath: tempRoot });
+    const dataClient = createDataClient(repository);
+    const evaluation = createEvaluationService(dataClient, { mode: 'hosted', tenantId: job.tenantId });
+    const result = await evaluation.run(job.payload || {}, {
+      useFakeGateway: process.env.CAREER_OPS_EVAL_FAKE === '1',
+    });
+
+    if (result.success) {
+      await syncEvaluationArtifacts(job.tenantId, client, tempRoot);
+    }
+
+    return result;
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+}
+
 async function runPdfJob(job, { client } = {}) {
   const dataClient = await createTenantDataClient(job.tenantId, client);
-  const reports = createReportService(dataClient);
-  const payload = job.payload || {};
-  const kind = payload.kind;
-
-  switch (kind) {
-    case 'resume':
-      return pdfBundle.generateResumePDF(
-        payload.company,
-        payload.role,
-        payload.jobDescription || '',
-        { dataClient }
-      );
-    case 'cover-letter':
-      return pdfBundle.generateCoverLetterPDF(
-        payload.company,
-        payload.role,
-        payload.jobDescription || '',
-        { dataClient }
-      );
-    case 'eval-report': {
-      const slug = payload.slug;
-      const jobMeta = reports.getBySlug(slug);
-      if (!jobMeta) throw new Error(`Job evaluation not found: ${slug}`);
-      return pdfBundle.generateEvalReportPDF(jobMeta, reports.getRawContent(slug), { dataClient });
-    }
-    case 'full-eval': {
-      const slug = payload.slug;
-      const jobMeta = reports.getBySlug(slug);
-      if (!jobMeta) throw new Error(`Job evaluation not found: ${slug}`);
-      return pdfBundle.generateFullEvalReportPDF(jobMeta, reports.getRawContent(slug), { dataClient });
-    }
-    default:
-      throw new Error(`Unsupported PDF job kind: ${kind || 'unknown'}`);
-  }
+  const reports = await createTenantReportService(dataClient);
+  return runPdf(job.payload || {}, { dataClient, reports });
 }
 
 async function executeJob(job, deps = {}) {
@@ -109,12 +117,17 @@ async function executeJob(job, deps = {}) {
     return runPdfJob(job, deps);
   }
 
+  if (job.jobType === 'evaluation') {
+    return runEvaluationJob(job, deps);
+  }
+
   throw new Error(`Unsupported job type: ${job.jobType}`);
 }
 
 module.exports = {
   createTenantDataClient,
   executeJob,
+  runEvaluationJob,
   runPdfJob,
   runScanJob
 };

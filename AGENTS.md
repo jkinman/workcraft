@@ -1,5 +1,16 @@
 # Career-Ops -- AI Job Search Pipeline
 
+## Maintainer Context
+
+Before changing application code, read:
+
+1. `CONTEXT.md` — current domain vocabulary, module map, invariants, and validation.
+2. `ARCHITECTURE.md` and `docs/ARCHITECTURE.md` — design and runtime flows.
+3. `docs/adr/` — accepted architecture decisions.
+4. The nearest scoped `AGENTS.md` (`lib/`, `dashboard-web/`, or `dashboard/`).
+
+This fork is a modular monolith: stable root facades delegate to deep modules under `lib/`; the Next.js app is a hosted adapter using Clerk, Supabase RLS, and a lease-safe worker. Do not reintroduce provider calls, filesystem implementations, or long-running work into entry facades/routes.
+
 ## Origin
 
 Built and used by [santifer](https://santifer.io) to evaluate 740+ offers, generate 100+ tailored CVs, and land a Head of Applied AI role. The archetypes, scoring, and negotiation scripts reflect that search; his portfolio is also open source: [cv-santiago](https://github.com/santifer/cv-santiago).

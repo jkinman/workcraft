@@ -1,0 +1,133 @@
+{
+  "contractVersion": 1,
+  "generatedBy": "lib/tracker/contract.mjs",
+  "headerAliases": {
+    "#": "num",
+    "num": "num",
+    "date": "date",
+    "company": "company",
+    "empresa": "company",
+    "via": "via",
+    "role": "role",
+    "puesto": "role",
+    "location": "location",
+    "score": "score",
+    "status": "status",
+    "pdf": "pdf",
+    "report": "report",
+    "notes": "notes"
+  },
+  "legacyColumnMap": {
+    "num": 1,
+    "date": 2,
+    "company": 3,
+    "role": 4,
+    "score": 5,
+    "status": 6,
+    "pdf": 7,
+    "report": 8,
+    "notes": 9
+  },
+  "scoreCellPattern": "^\\d+(?:\\.\\d+)?\\/5$",
+  "separatorRowPattern": "^\\|(?:\\s*:?-+:?\\s*\\|)+\\s*$",
+  "requiredHeaderFields": [
+    "num",
+    "company",
+    "role",
+    "score",
+    "status"
+  ],
+  "states": [
+    {
+      "id": "evaluated",
+      "label": "Evaluated",
+      "aliases": [
+        "evaluada"
+      ]
+    },
+    {
+      "id": "applied",
+      "label": "Applied",
+      "aliases": [
+        "aplicado",
+        "enviada",
+        "aplicada",
+        "sent"
+      ]
+    },
+    {
+      "id": "responded",
+      "label": "Responded",
+      "aliases": [
+        "respondido"
+      ]
+    },
+    {
+      "id": "interview",
+      "label": "Interview",
+      "aliases": [
+        "entrevista"
+      ]
+    },
+    {
+      "id": "offer",
+      "label": "Offer",
+      "aliases": [
+        "oferta"
+      ]
+    },
+    {
+      "id": "rejected",
+      "label": "Rejected",
+      "aliases": [
+        "rechazado",
+        "rechazada"
+      ]
+    },
+    {
+      "id": "discarded",
+      "label": "Discarded",
+      "aliases": [
+        "descartado",
+        "descartada",
+        "cerrada",
+        "cancelada"
+      ]
+    },
+    {
+      "id": "skip",
+      "label": "SKIP",
+      "aliases": [
+        "no_aplicar",
+        "no aplicar",
+        "skip",
+        "monitor"
+      ]
+    },
+    {
+      "id": "hired",
+      "label": "Hired",
+      "aliases": [
+        "contratado",
+        "contratada",
+        "hired",
+        "accepted",
+        "accept"
+      ]
+    }
+  ],
+  "statusLogColumns": [
+    "trackerNum",
+    "date",
+    "from",
+    "to",
+    "source"
+  ],
+  "cliExitCodes": {
+    "OK": 0,
+    "USAGE": 1,
+    "NOT_FOUND": 2,
+    "AMBIGUOUS": 3,
+    "LOCK_TIMEOUT": 4
+  }
+}
