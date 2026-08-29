@@ -3,85 +3,75 @@ import { Buffer } from 'buffer'
 /**
  * Extract text from uploaded file buffers.
  * Supports PDF, DOCX, TXT, and RTF.
- *
- * PDF parsing uses pdf-parse v2 / pdfjs-dist. In Next.js,
- * these packages are marked as serverExternalPackages so
- * their internal dynamic imports (for web workers) resolve
- * from node_modules directly.
  */
 export async function extractTextFromFile(
   buffer: Buffer,
   mimeType: string
 ): Promise<string> {
-  switch (mimeType) {
-    case 'application/pdf': {
-      const { PDFParse } = await import('pdf-parse')
-      const parser = new PDFParse({ data: buffer })
-      try {
-        const result = await parser.getText()
-        return result.text
-      } finally {
-        await parser.destroy()
+  try {
+    switch (mimeType) {
+      case 'application/pdf': {
+        const { PDFParse } = await import('pdf-parse')
+        const parser = new PDFParse({ data: buffer })
+        try {
+          const result = await parser.getText()
+          return result.text
+        } finally {
+          await parser.destroy()
+        }
       }
-    }
 
-    case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': {
-      const mammoth = await import('mammoth') as typeof import('mammoth')
-      const result = await mammoth.extractRawText({ buffer })
-      return result.value
-    }
+      case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': {
+        const mammoth = await import('mammoth') as typeof import('mammoth')
+        const result = await mammoth.extractRawText({ buffer })
+        return result.value
+      }
 
-    case 'text/plain': {
-      return buffer.toString('utf-8')
-    }
+      case 'text/plain': {
+        return buffer.toString('utf-8')
+      }
 
-    case 'text/rtf': {
-      const text = buffer.toString('utf-8')
-      return stripRtf(text)
-    }
-
-    default: {
-      // Fallback: detect RTF by content signature
-      const text = buffer.toString('utf-8')
-      if (text.startsWith('{\\rtf')) {
+      case 'text/rtf': {
+        const text = buffer.toString('utf-8')
         return stripRtf(text)
       }
-      throw new Error(`Unsupported file type: ${mimeType}`)
+
+      default: {
+        const text = buffer.toString('utf-8')
+        if (text.startsWith('{\\rtf')) {
+          return stripRtf(text)
+        }
+        throw new Error(`Unsupported file type: ${mimeType}`)
+      }
     }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error'
+    throw new Error(`File extraction failed: ${msg}`)
   }
 }
 
-/**
- * Strip RTF control codes from raw RTF text, leaving plain text content.
- */
 function stripRtf(rtf: string): string {
   let result = rtf
 
-  // Remove font table, color table, stylesheet, and other RTF groups
-  result = result.replace(/\\{\\\\fonttbl[^}]*\\}/g, '')
-  result = result.replace(/\\{\\\\colortbl[^}]*\\}/g, '')
-  result = result.replace(/\\{\\\\stylesheet[^}]*\\}/g, '')
-  result = result.replace(/\\{\\\\generator[^}]*\\}/g, '')
-  result = result.replace(/\\{\\\\info[^}]*\\}/g, '')
-  result = result.replace(/\\{\\\\mmathPr[^}]*\\}/g, '')
+  // Remove all RTF groups { keyword ... }
+  result = result.replace(/\{[^{}]*\}/g, ' ')
 
-  // Remove control words with optional numeric argument (e.g. \\fs24, \\par)
-  result = result.replace(/\\\\[a-z]+[-]?\\d*/g, '')
+  // Strip control words: \pard, \fs24, \par, etc.
+  result = result.replace(/\\[a-z0-9]+-?[0-9]*/gi, '')
 
-  // Remove curly braces that are part of RTF grouping
-  result = result.replace(/[{}]/g, '')
+  // Strip hex escapes like \'e9
+  result = result.replace(/\\'[0-9a-f]{2}/gi, '')
 
-  // Remove backslash-prefixed symbols like \\'e9 (escaped chars)
-  result = result.replace(/\\\\'[0-9a-fA-F]{2}/g, '')
+  // Remove remaining backslashes that aren't \n
+  result = result.replace(/\\(?!n)/g, '')
 
-  // Remove lone backslashes
-  result = result.replace(/\\\\/g, '')
+  // Collapse multiple whitespace chars
+  result = result.replace(/[ \t]+/g, ' ')
 
-  // Convert multiple consecutive newlines into single newlines
+  // Normalize newlines
   result = result.replace(/\n{3,}/g, '\n\n')
+  result = result.replace(/^[ \t]*\n/gm, '\n')
 
-  // Trim whitespace
-  result = result.trim()
-
-  return result
+  return result.trim()
 }
+
