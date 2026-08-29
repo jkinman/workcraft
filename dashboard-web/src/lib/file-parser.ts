@@ -3,6 +3,11 @@ import { Buffer } from 'buffer'
 /**
  * Extract text from uploaded file buffers.
  * Supports PDF, DOCX, TXT, and RTF.
+ *
+ * PDF parsing uses pdf-parse v2 / pdfjs-dist. In Next.js,
+ * these packages are marked as serverExternalPackages so
+ * their internal dynamic imports (for web workers) resolve
+ * from node_modules directly.
  */
 export async function extractTextFromFile(
   buffer: Buffer,
@@ -21,7 +26,6 @@ export async function extractTextFromFile(
     }
 
     case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': {
-      // mammoth doesn't ship its own types, but has a stable API
       const mammoth = await import('mammoth') as typeof import('mammoth')
       const result = await mammoth.extractRawText({ buffer })
       return result.value
@@ -54,24 +58,24 @@ function stripRtf(rtf: string): string {
   let result = rtf
 
   // Remove font table, color table, stylesheet, and other RTF groups
-  result = result.replace(/\{\\fonttbl[^}]*\}/g, '')
-  result = result.replace(/\{\\colortbl[^}]*\}/g, '')
-  result = result.replace(/\{\\stylesheet[^}]*\}/g, '')
-  result = result.replace(/\{\\generator[^}]*\}/g, '')
-  result = result.replace(/\{\\info[^}]*\}/g, '')
-  result = result.replace(/\{\\mmathPr[^}]*\}/g, '')
+  result = result.replace(/\\{\\\\fonttbl[^}]*\\}/g, '')
+  result = result.replace(/\\{\\\\colortbl[^}]*\\}/g, '')
+  result = result.replace(/\\{\\\\stylesheet[^}]*\\}/g, '')
+  result = result.replace(/\\{\\\\generator[^}]*\\}/g, '')
+  result = result.replace(/\\{\\\\info[^}]*\\}/g, '')
+  result = result.replace(/\\{\\\\mmathPr[^}]*\\}/g, '')
 
-  // Remove control words with optional numeric argument (e.g. \fs24, \par)
-  result = result.replace(/\\[a-z]+[-]?\d*/g, '')
+  // Remove control words with optional numeric argument (e.g. \\fs24, \\par)
+  result = result.replace(/\\\\[a-z]+[-]?\\d*/g, '')
 
   // Remove curly braces that are part of RTF grouping
   result = result.replace(/[{}]/g, '')
 
-  // Remove backslash-prefixed symbols like \'e9 (escaped chars)
-  result = result.replace(/\\'[0-9a-fA-F]{2}/g, '')
+  // Remove backslash-prefixed symbols like \\'e9 (escaped chars)
+  result = result.replace(/\\\\'[0-9a-fA-F]{2}/g, '')
 
   // Remove lone backslashes
-  result = result.replace(/\\/g, '')
+  result = result.replace(/\\\\/g, '')
 
   // Convert multiple consecutive newlines into single newlines
   result = result.replace(/\n{3,}/g, '\n\n')
