@@ -60,7 +60,7 @@ export async function parseCV(rawCv: string): Promise<{
       'X-Title': 'Vetura',
     },
     body: JSON.stringify({
-      model: 'anthropic/claude-3.5-haiku-20241022',
+      model: 'anthropic/claude-haiku-4.5',
       messages: [
         { role: 'system', content: EXTRACT_PROMPT },
         { role: 'user', content: rawCv.slice(0, 8000) },
