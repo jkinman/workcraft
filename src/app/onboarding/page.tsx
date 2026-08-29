@@ -57,14 +57,21 @@ export default function Onboarding() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('id, onboarding_completed, onboarding_step')
+        .select('id, raw_cv, parsed_cv, onboarding_completed, onboarding_step')
         .eq('id', user!.id)
         .single()
 
       if (profile) {
         setProfileId(profile.id)
-        if (profile.onboarding_completed) {
+        // If onboarding is marked complete but CV wasn't parsed, let them redo step 2
+        if (profile.onboarding_completed && profile.parsed_cv) {
           router.push('/dashboard')
+        } else if (profile.onboarding_completed && !profile.parsed_cv) {
+          // CV parse failed in a prior session — let them retry
+          if (profile.raw_cv) {
+            cvForm.setValue('rawCv', profile.raw_cv)
+          }
+          setStep(2)
         } else if (profile.onboarding_step > 1) {
           setStep(profile.onboarding_step)
         }
