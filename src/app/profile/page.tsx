@@ -2,10 +2,12 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 
 interface ParsedCV {
   name?: string
@@ -26,6 +28,7 @@ interface ParsedCV {
 export default function ProfilePage() {
   const router = useRouter()
   const supabase = createClient()
+  const queryClient = useQueryClient()
 
   const { data: user, isLoading: userLoading } = useQuery({
     queryKey: ['auth.user'],
@@ -55,10 +58,47 @@ export default function ProfilePage() {
     if (!loading && !user) router.push('/')
   }, [loading, user, router])
 
+  const reparseMutation = useMutation({
+    mutationFn: async (rawCv: string) => {
+      const res = await fetch('/api/onboarding/cv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw_cv: rawCv }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to re-parse CV')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['profile'] })
+    },
+  })
+
   if (loading) {
     return (
       <main className="mx-auto max-w-3xl p-6">
-        <p className="text-muted-foreground">Loading...</p>
+        <div className="mb-6 flex items-center justify-between">
+          <Skeleton className="h-8 w-24" />
+          <Skeleton className="h-8 w-24" />
+        </div>
+        <Card className="mb-6">
+          <CardContent className="p-6">
+            <Skeleton className="mb-3 h-4 w-32" />
+            <Skeleton className="h-4 w-48" />
+          </CardContent>
+        </Card>
+        <Card className="mb-6">
+          <CardContent className="p-6">
+            <Skeleton className="mb-3 h-4 w-24" />
+            <div className="flex flex-wrap gap-2">
+              <Skeleton className="h-5 w-20 rounded-full" />
+              <Skeleton className="h-5 w-28 rounded-full" />
+              <Skeleton className="h-5 w-16 rounded-full" />
+            </div>
+          </CardContent>
+        </Card>
       </main>
     )
   }
@@ -66,11 +106,36 @@ export default function ProfilePage() {
   const parsed = profile?.parsed_cv ? (profile.parsed_cv as ParsedCV) : null
   const hasParsed = !!parsed && !!parsed.skills
 
+  const skillLevelVariant = (level?: string): 'default' | 'secondary' => {
+    if (level === 'expert') return 'default'
+    if (level === 'intermediate') return 'default'
+    return 'secondary'
+  }
+
   return (
     <main className="mx-auto max-w-3xl p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Profile</h1>
         <div className="flex gap-2">
+          {profile?.raw_cv && profile?.parsed_cv && (
+            <Button
+              onClick={() => reparseMutation.mutate(profile.raw_cv)}
+              variant="outline"
+              size="sm"
+              disabled={reparseMutation.isPending}
+            >
+              {reparseMutation.isPending ? 'Parsing...' : 'Re-parse CV'}
+            </Button>
+          )}
+          {profile?.raw_cv && (
+            <Button
+              onClick={() => router.push('/onboarding?mode=cv')}
+              variant="outline"
+              size="sm"
+            >
+              Re-import CV
+            </Button>
+          )}
           {profile?.raw_cv && !hasParsed && (
             <Button onClick={() => router.push('/onboarding')} variant="outline" size="sm">
               Retry CV Parse
@@ -81,6 +146,12 @@ export default function ProfilePage() {
           </Button>
         </div>
       </div>
+
+      {reparseMutation.isError && (
+        <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          {reparseMutation.error?.message || 'Failed to re-parse CV'}
+        </div>
+      )}
 
       {/* Basic Info */}
       <Card className="mb-6">
@@ -169,19 +240,10 @@ export default function ProfilePage() {
               <CardContent>
                 <div className="flex flex-wrap gap-2">
                   {parsed.skills.map((skill, i) => (
-                    <span
-                      key={i}
-                      className={`rounded-full px-3 py-1 text-xs font-medium ${
-                        skill.level === 'expert'
-                          ? 'bg-primary/10 text-primary'
-                          : skill.level === 'intermediate'
-                            ? 'bg-secondary text-secondary-foreground'
-                            : 'bg-muted text-muted-foreground'
-                      }`}
-                    >
+                    <Badge key={i} variant={skillLevelVariant(skill.level)}>
                       {skill.name}
                       {skill.years ? ` · ${skill.years}y` : ''}
-                    </span>
+                    </Badge>
                   ))}
                 </div>
               </CardContent>
@@ -204,9 +266,9 @@ export default function ProfilePage() {
                       </div>
                       <div className="flex items-center gap-2">
                         {exp.ai_relevant && (
-                          <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                          <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
                             AI
-                          </span>
+                          </Badge>
                         )}
                         <span className="whitespace-nowrap text-xs text-muted-foreground">
                           {exp.start || ''} — {exp.end || 'Present'}
