@@ -63,9 +63,14 @@ export default function Dashboard() {
     <main className="mx-auto max-w-3xl p-6">
       <div className="mb-8 flex items-center justify-between">
         <h1 className="m-0 text-2xl font-bold">Vetura</h1>
-        <Button onClick={handleSignOut} variant="outline" size="sm">
-          Sign out
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => router.push('/profile')} variant="ghost" size="sm">
+            Profile
+          </Button>
+          <Button onClick={handleSignOut} variant="outline" size="sm">
+            Sign out
+          </Button>
+        </div>
       </div>
 
       {profile && (
