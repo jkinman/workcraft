@@ -79,6 +79,33 @@ export default function Dashboard() {
               : 'Set your target roles in onboarding'}
             {profile.target_salary_min && ` · $${profile.target_salary_min.toLocaleString()}+ CAD`}
           </p>
+
+          {profile.raw_cv && !profile.parsed_cv && (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-800/30 dark:bg-amber-950/20">
+              <p className="mb-2 text-amber-800 dark:text-amber-300">
+                CV saved but AI parsing failed.
+              </p>
+              <Button
+                onClick={() => router.push('/onboarding')}
+                variant="outline"
+                size="sm"
+              >
+                Retry CV Parsing
+              </Button>
+            </div>
+          )}
+
+          {!profile.raw_cv && (
+            <div className="mt-4">
+              <Button
+                onClick={() => router.push('/onboarding')}
+                variant="outline"
+                size="sm"
+              >
+                Complete Onboarding
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
