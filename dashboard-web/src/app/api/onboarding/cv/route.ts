@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createRouteClient } from '@/lib/supabase/route-client'
 import { parseCV, hashCV } from '@/lib/cv-parser'
+import { z } from 'zod'
 import type { NextRequest } from 'next/server'
+
+const cvSchema = z.object({
+  raw_cv: z.string().min(50, 'CV must be at least 50 characters'),
+})
 
 export async function POST(request: NextRequest) {
   const { client } = await createRouteClient(request)
@@ -11,12 +16,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const body = await request.json()
-  const { raw_cv } = body
-
-  if (!raw_cv || typeof raw_cv !== 'string' || raw_cv.length < 50) {
-    return NextResponse.json({ error: 'CV must be at least 50 characters' }, { status: 400 })
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
+
+  const parsed = cvSchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Validation failed', details: parsed.error.flatten() },
+      { status: 400 }
+    )
+  }
+
+  const { raw_cv } = parsed.data
 
   // 1. Store raw CV + hash immediately
   const cvHash = hashCV(raw_cv)

@@ -3,13 +3,31 @@
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { z } from 'zod'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+
+const emailSchema = z.object({
+  email: z.string().email('Please enter a valid email address'),
+})
+
+type EmailFormData = z.infer<typeof emailSchema>
 
 export default function Home() {
-  const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const router = useRouter()
   const supabase = createClient()
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<EmailFormData>({
+    resolver: zodResolver(emailSchema),
+  })
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -17,13 +35,12 @@ export default function Home() {
     })
   }, [])
 
-  const handleSignIn = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSignIn = async (data: EmailFormData) => {
     setLoading(true)
     setMessage('')
 
     const { error } = await supabase.auth.signInWithOtp({
-      email,
+      email: data.email,
       options: {
         emailRedirectTo: `${window.location.origin}/api/auth/callback`,
       },
@@ -49,60 +66,51 @@ export default function Home() {
   }
 
   return (
-    <main style={{ maxWidth: 480, margin: '120px auto', padding: '0 24px', textAlign: 'center' }}>
-      <h1 style={{ fontSize: 36, fontWeight: 700, marginBottom: 8 }}>Vetura</h1>
-      <p style={{ color: '#666', marginBottom: 40, fontSize: 18 }}>
+    <main className="mx-auto max-w-md px-6 pt-32 text-center">
+      <h1 className="mb-2 text-4xl font-bold">Vetura</h1>
+      <p className="mb-10 text-lg text-muted-foreground">
         AI-powered career intelligence. <br />
         Match your profile to the right roles.
       </p>
 
-      <form onSubmit={handleSignIn} style={{ marginBottom: 20 }}>
-        <input
+      <form onSubmit={handleSubmit(handleSignIn)} className="mb-5">
+        <Input
           type="email"
           placeholder="you@company.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          style={{
-            width: '100%', padding: '12px 16px', fontSize: 16,
-            border: '1px solid #ddd', borderRadius: 8, marginBottom: 12,
-            boxSizing: 'border-box',
-          }}
+          {...register('email')}
+          className="mb-3"
         />
-        <button
+        {errors.email && (
+          <p className="mb-2 text-sm text-destructive">{errors.email.message}</p>
+        )}
+        <Button
           type="submit"
           disabled={loading}
-          style={{
-            width: '100%', padding: '12px', fontSize: 16,
-            background: '#000', color: '#fff', border: 'none',
-            borderRadius: 8, cursor: loading ? 'not-allowed' : 'pointer',
-            opacity: loading ? 0.6 : 1,
-          }}
+          className="w-full"
+          size="lg"
         >
           {loading ? 'Sending...' : 'Send Magic Link'}
-        </button>
+        </Button>
       </form>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <div style={{ flex: 1, height: 1, background: '#ddd' }} />
-        <span style={{ color: '#999' }}>or</span>
-        <div style={{ flex: 1, height: 1, background: '#ddd' }} />
+      <div className="mb-5 flex items-center gap-3">
+        <div className="h-px flex-1 bg-border" />
+        <span className="text-sm text-muted-foreground">or</span>
+        <div className="h-px flex-1 bg-border" />
       </div>
 
-      <button
+      <Button
         onClick={handleGoogleSignIn}
         disabled={loading}
-        style={{
-          width: '100%', padding: '12px', fontSize: 16,
-          background: '#fff', color: '#000', border: '1px solid #ddd',
-          borderRadius: 8, cursor: loading ? 'not-allowed' : 'pointer',
-        }}
+        variant="outline"
+        className="w-full"
+        size="lg"
       >
         Continue with Google
-      </button>
+      </Button>
 
       {message && (
-        <p style={{ marginTop: 20, padding: 12, background: '#f5f5f5', borderRadius: 8, fontSize: 14 }}>
+        <p className="mt-5 rounded-lg bg-muted px-4 py-3 text-sm text-muted-foreground">
           {message}
         </p>
       )}

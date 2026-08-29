@@ -1,6 +1,15 @@
 import { NextResponse } from 'next/server'
 import { createRouteClient } from '@/lib/supabase/route-client'
+import { z } from 'zod'
 import type { NextRequest } from 'next/server'
+
+const profileSchema = z.object({
+  display_name: z.string().min(1, 'Display name is required'),
+  target_roles: z.array(z.string()).optional().default([]),
+  target_salary_min: z.number().positive().nullable().optional(),
+  target_salary_max: z.number().positive().nullable().optional(),
+  preferred_locations: z.array(z.string()).optional().default([]),
+})
 
 export async function POST(request: NextRequest) {
   const { client } = await createRouteClient(request)
@@ -10,8 +19,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const body = await request.json()
-  const { display_name, target_roles, target_salary_min, target_salary_max, preferred_locations } = body
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  const parsed = profileSchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Validation failed', details: parsed.error.flatten() },
+      { status: 400 }
+    )
+  }
+
+  const { display_name, target_roles, target_salary_min, target_salary_max, preferred_locations } = parsed.data
 
   const { data, error } = await client
     .from('profiles')
