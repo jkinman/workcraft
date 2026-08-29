@@ -5,6 +5,12 @@ import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu'
 
 export default function Dashboard() {
   const router = useRouter()
@@ -63,14 +69,21 @@ export default function Dashboard() {
     <main className="mx-auto max-w-3xl p-6">
       <div className="mb-8 flex items-center justify-between">
         <h1 className="m-0 text-2xl font-bold">Vetura</h1>
-        <div className="flex gap-2">
-          <Button onClick={() => router.push('/profile')} variant="ghost" size="sm">
-            Profile
-          </Button>
-          <Button onClick={handleSignOut} variant="outline" size="sm">
-            Sign out
-          </Button>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="inline-flex h-8 items-center justify-center rounded-lg border border-transparent bg-clip-padding px-2.5 text-sm font-medium whitespace-nowrap transition-all outline-none select-none hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px"
+          >
+            {profile?.display_name || 'Menu'}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => router.push('/profile')}>
+              Profile
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleSignOut} variant="destructive">
+              Sign out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {profile && (
