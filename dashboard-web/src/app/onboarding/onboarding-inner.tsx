@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Upload, FileText, AlertCircle } from 'lucide-react'
 
 interface ParsedCV {
   name?: string
@@ -50,6 +51,11 @@ export default function OnboardingInner() {
   const [step, setStep] = useState(1)
   const [profileId, setProfileId] = useState('')
   const [parsedCv, setParsedCv] = useState<ParsedCV | null>(null)
+  const [fileUploading, setFileUploading] = useState(false)
+  const [fileUploadError, setFileUploadError] = useState<string | null>(null)
+  const [uploadedFilename, setUploadedFilename] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
 
   // Check for ?mode=cv query param
   const modeCv = useMemo(() => searchParams.get('mode') === 'cv', [searchParams])
@@ -190,6 +196,36 @@ export default function OnboardingInner() {
     },
   })
 
+  const handleFileUpload = useCallback(async (file: File) => {
+    setFileUploadError(null)
+    setFileUploading(true)
+    setUploadedFilename(null)
+
+    const fd = new FormData()
+    fd.append('file', file)
+
+    try {
+      const res = await fetch('/api/parse-file', {
+        method: 'POST',
+        body: fd,
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to parse file')
+      }
+
+      const result = await res.json()
+      cvForm.setValue('rawCv', result.text)
+      setUploadedFilename(result.filename)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to upload file'
+      setFileUploadError(message)
+    } finally {
+      setFileUploading(false)
+    }
+  }, [cvForm])
+
   const saveCvMutation = useMutation({
     mutationFn: async (data: CvFormData) => {
       const res = await fetch('/api/onboarding/cv', {
@@ -262,9 +298,75 @@ export default function OnboardingInner() {
       {step === 1 && (
         <div>
           <h2 className="mb-1 text-2xl font-semibold">Paste your CV</h2>
-          <p className="mb-8 text-muted-foreground">
+          <p className="mb-4 text-muted-foreground">
             Or paste a text version of your resume. We&apos;ll parse it with AI to extract your skills and experience.
           </p>
+
+          {/* File upload drop zone */}
+          <div
+            className={`relative mb-4 flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 transition-colors ${
+              isDragOver
+                ? 'border-ring bg-muted/60'
+                : 'border-input hover:bg-muted/50'
+            } ${fileUploading ? 'pointer-events-none opacity-60' : ''}`}
+            style={{ minHeight: '160px' }}
+            onClick={() => inputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setIsDragOver(true) }}
+            onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false) }}
+            onDrop={(e) => {
+              e.preventDefault()
+              setIsDragOver(false)
+              const files = e.dataTransfer.files
+              if (files.length > 0) {
+                handleFileUpload(files[0])
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                inputRef.current?.click()
+              }
+            }}
+          >
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".pdf,.docx,.rtf,.txt"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) handleFileUpload(file)
+              }}
+            />
+
+            {fileUploading ? (
+              <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                <Upload className="h-8 w-8 animate-pulse" />
+                <span className="text-sm font-medium">Uploading...</span>
+              </div>
+            ) : uploadedFilename ? (
+              <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                <FileText className="h-8 w-8 text-foreground" />
+                <span className="text-sm font-medium text-foreground">{uploadedFilename}</span>
+                <span className="text-xs">Uploaded successfully — you can edit the text below</span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                <Upload className="h-8 w-8" />
+                <span className="text-sm font-medium">Drag &amp; drop your resume here</span>
+                <span className="text-xs">or click to browse</span>
+              </div>
+            )}
+          </div>
+
+          {fileUploadError && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{fileUploadError}</span>
+            </div>
+          )}
 
           <form onSubmit={cvForm.handleSubmit((data) => saveCvMutation.mutate(data))}>
             <textarea
