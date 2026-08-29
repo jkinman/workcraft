@@ -10,7 +10,7 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname
 
   // Protected routes redirect to login
-  const protectedPaths = ['/dashboard', '/onboarding', '/api/protected']
+  const protectedPaths = ['/dashboard', '/onboarding', '/profile', '/api/protected']
   const isProtected = protectedPaths.some(p => path.startsWith(p))
 
   if (isProtected && !user) {
