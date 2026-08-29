@@ -116,6 +116,15 @@ export default function Onboarding() {
         const err = await res.json()
         throw new Error(err.error || 'Failed to save CV')
       }
+
+      const result = await res.json()
+
+      // Don't advance if AI parse failed — show retry instead
+      if (!result.parsed) {
+        throw new Error('AI parsing failed. Please try again.')
+      }
+
+      return result
     },
     onSuccess: () => {
       setStep(3)
