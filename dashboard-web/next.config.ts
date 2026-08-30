@@ -3,9 +3,6 @@ const nextConfig = {
   // pdf-parse / pdfjs-dist use dynamic imports for web workers
   // which break when bundled into chunks. Mark them as external.
   serverExternalPackages: ['pdf-parse', 'pdfjs-dist'],
-  turbopack: {
-    root: process.cwd(),
-  },
 }
 
 export default nextConfig
